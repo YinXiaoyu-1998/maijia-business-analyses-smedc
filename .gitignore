@@ -5,6 +5,13 @@ __pycache__/
 output/
 runs/
 
+/query-plan*.json
+/query_plan*.json
+/manifest*.json
+/query-manifest*.json
+/query_manifest*.json
+/bundle*.json
+
 *.html
 *.csv
 *summary.json

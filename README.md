@@ -2,7 +2,7 @@
 
 Enterprise Hub-backed reporting skill scaffold for Maijia operating reports.
 
-This repository is a public-ready derivative of the original [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill. The original skill worked from local Meituan POS exports; this derivative is designed to use authenticated Enterprise Hub MCP tools and permission-scoped structured data instead. This scaffold is licensed under MIT; see [LICENSE](LICENSE).
+This repository is an Enterprise Hub-backed derivative design informed by the original [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill. The upstream source currently exposes no detected license metadata, so this repository does not assert upstream license inheritance. Implementation in this repository is independent and licensed under this repository's MIT license; see [LICENSE](LICENSE).
 
 Publication is intentionally held until the required Enterprise Hub MCP launcher contract with structured dataset coverage is published and independently verified. Do not push or install this as the public reporting skill before that dependency exists.
 

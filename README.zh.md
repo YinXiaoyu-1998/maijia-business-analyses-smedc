@@ -2,7 +2,7 @@
 
 这是面向麦家经营周报和月报的 Enterprise Hub 结构化数据 reporting skill 脚手架。
 
-本仓库是原 [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill 的 Enterprise Hub 派生版本。原 skill 以本地美团 POS 导出文件为输入；本派生版本改为通过已登录的 Enterprise Hub MCP 工具读取权限范围内的结构化数据。本脚手架采用 MIT 许可，见 [LICENSE](LICENSE)。
+本仓库是受原 [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill 启发的 Enterprise Hub-backed 派生设计。当前未检测到 upstream source 暴露 license metadata，因此本仓库不声明继承 upstream license。后续实现将在本仓库内独立完成，并采用本仓库自己的 MIT 许可，见 [LICENSE](LICENSE)。
 
 在支持结构化覆盖查询的 Enterprise Hub MCP launcher 发布并完成独立校验前，不应发布本仓库，也不应把它作为公开 reporting skill 安装使用。
 

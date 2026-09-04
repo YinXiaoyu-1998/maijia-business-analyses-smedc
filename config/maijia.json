@@ -18,7 +18,7 @@
       "dataset": "business",
       "metadataPolicy": "window",
       "registryVersionSource": "list_structured_datasets",
-      "requiredFor": ["coreBusiness", "weeklyReport", "monthlyReport", "trend", "channelMix", "daypartAttribution", "productSalesPer10k"]
+      "requiredFor": ["coreBusiness", "weeklyTrend", "monthlyTrend", "channelMix", "daypartAttribution", "stallSalesMix", "productSalesPer10k"]
     },
     "dishes": {
       "dataset": "dishes",
