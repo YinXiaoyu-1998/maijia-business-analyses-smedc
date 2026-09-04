@@ -122,6 +122,46 @@ class BuildQueryPlanTests(unittest.TestCase):
 
         return self.write_fixture_copy(add_previous_business_window)
 
+    def coverage_with_complete_weekly_trend_union(self) -> Path:
+        def replace_business_sources(name: str, data: dict) -> dict:
+            if name != "coverage_business.json":
+                return data
+            return {
+                **data,
+                "sources": [
+                    {
+                        "importBatchId": "imp_synth_business_20260406_20260630",
+                        "sourceDocumentId": "doc_synth_business_20260406_20260630",
+                        "sourceDocumentTitle": "Synthetic Maijia Business Window 2026-04-06 to 2026-06-30",
+                        "startDate": "2026-04-06",
+                        "endDate": "2026-06-30",
+                        "appliedAt": "2026-08-01T08:20:00.000Z",
+                        "rowCount": 3400,
+                    },
+                    {
+                        "importBatchId": "imp_synth_business_20260701_20260715",
+                        "sourceDocumentId": "doc_synth_business_20260701_20260715",
+                        "sourceDocumentTitle": "Synthetic Maijia Business Window 2026-07-01 to 2026-07-15",
+                        "startDate": "2026-07-01",
+                        "endDate": "2026-07-15",
+                        "appliedAt": "2026-08-01T08:21:00.000Z",
+                        "rowCount": 610,
+                    },
+                    {
+                        "importBatchId": "imp_synth_business_20260716_20260731",
+                        "sourceDocumentId": "doc_synth_business_20260716_20260731",
+                        "sourceDocumentTitle": "Synthetic Maijia Business Window 2026-07-16 to 2026-07-31",
+                        "startDate": "2026-07-16",
+                        "endDate": "2026-07-31",
+                        "appliedAt": "2026-08-01T08:22:00.000Z",
+                        "rowCount": 630,
+                    },
+                    data["sources"][1],
+                ],
+            }
+
+        return self.write_fixture_copy(replace_business_sources)
+
     def job(self, manifest: dict, job_id: str) -> dict:
         matches = [job for job in manifest["jobs"] if job["id"] == job_id]
         self.assertEqual(len(matches), 1, job_id)
@@ -130,12 +170,46 @@ class BuildQueryPlanTests(unittest.TestCase):
     def job_ids(self, manifest: dict) -> list[str]:
         return [job["id"] for job in manifest["jobs"]]
 
+    def assert_manifest_uses_target_wire_contract(self, manifest: dict) -> None:
+        allowed_input_keys = {
+            "dataset",
+            "registryVersion",
+            "filter",
+            "groupBy",
+            "aggregates",
+            "select",
+            "sort",
+            "page",
+        }
+        for job in manifest["jobs"]:
+            with self.subTest(job=job["id"]):
+                query = job["input"]
+                self.assertLessEqual(set(query), allowed_input_keys)
+                self.assertNotIn("mode", query)
+                self.assertNotIn("orderBy", query)
+                self.assertNotIn("limit", query)
+                self.assertIsInstance(query["page"], dict)
+                self.assertIsInstance(query["page"]["limit"], int)
+                self.assertIsInstance(query.get("sort", []), list)
+                if "aggregates" in query:
+                    self.assertIn("groupBy", query)
+                    self.assertNotIn("select", query)
+                    for aggregate in query["aggregates"]:
+                        self.assertLessEqual(set(aggregate), {"op", "field", "weightField", "as"})
+                        self.assertIn(aggregate["op"], {"sum", "weightedAvg"})
+                        if aggregate["op"] == "weightedAvg":
+                            self.assertIn("weightField", aggregate)
+                else:
+                    self.assertIn("select", query)
+                    self.assertNotIn("groupBy", query)
+
     def test_diagnosis_includes_required_business_modules(self) -> None:
         manifest = self.run_plan(report_type="diagnosis")
 
         self.assertEqual(manifest["schemaVersion"], 1)
         self.assertEqual(manifest["report"]["type"], "diagnosis")
         ids = set(self.job_ids(manifest))
+        self.assert_manifest_uses_target_wire_contract(manifest)
         self.assertGreaterEqual(
             ids,
             {
@@ -153,7 +227,7 @@ class BuildQueryPlanTests(unittest.TestCase):
         aggregate_ops = {aggregate["as"]: aggregate["op"] for aggregate in kpi_job["input"]["aggregates"]}
         self.assertEqual(aggregate_ops["weighted_open_rate"], "weightedAvg")
         self.assertEqual(aggregate_ops["weighted_turnover_rate"], "weightedAvg")
-        self.assertEqual(kpi_job["input"]["limit"], 200)
+        self.assertEqual(kpi_job["input"]["page"]["limit"], 200)
 
     def test_weekly_manifest_includes_comparisons_trend_and_optional_dish_modules(self) -> None:
         manifest = self.run_plan(
@@ -179,7 +253,11 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertEqual(trend["input"]["groupBy"], ["store_name", "business_week"])
         self.assertEqual(trend["input"]["filter"]["field"], "business_date")
         self.assertEqual(trend["input"]["filter"]["op"], "between")
-        self.assertEqual(trend["input"]["filter"]["value"], ["2026-04-11", "2026-07-31"])
+        self.assertEqual(trend["input"]["filter"]["value"], ["2026-04-06", "2026-07-26"])
+        self.assertEqual(manifest["report"]["trendWindows"]["current"], {"start": "2026-04-06", "end": "2026-07-26"})
+        catalog = self.job(manifest, "dish_catalog_current_snapshot")
+        self.assertEqual(catalog["input"]["sort"][0], {"field": "snapshot_date", "direction": "desc"})
+        self.assertEqual(catalog["input"]["page"]["limit"], 200)
 
     def test_monthly_manifest_includes_six_month_current_and_prior_year_trends(self) -> None:
         manifest = self.run_plan(
@@ -207,7 +285,40 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertEqual(current_trend["input"]["groupBy"], ["store_name", "business_month"])
         self.assertEqual(current_trend["input"]["filter"]["value"], ["2026-02-01", "2026-07-31"])
         self.assertEqual(prior_trend["input"]["filter"]["value"], ["2025-02-01", "2025-07-31"])
+        self.assertEqual(
+            manifest["report"]["trendWindows"],
+            {
+                "current": {"start": "2026-02-01", "end": "2026-07-31"},
+                "priorYear": {"start": "2025-02-01", "end": "2025-07-31"},
+            },
+        )
         self.assertFalse(any("profit" in job["id"] for job in manifest["jobs"]))
+
+    def test_trend_windows_align_to_complete_natural_buckets(self) -> None:
+        weekly = self.run_plan(
+            report_type="weekly",
+            current_start="2026-07-01",
+            current_end="2026-07-29",
+        )
+        monthly = self.run_plan(
+            report_type="monthly",
+            current_start="2026-07-01",
+            current_end="2026-07-15",
+            yoy_start="2025-07-01",
+            yoy_end="2025-07-15",
+        )
+
+        self.assertEqual(
+            weekly["report"]["trendWindows"],
+            {"current": {"start": "2026-04-06", "end": "2026-07-26"}},
+        )
+        self.assertEqual(
+            monthly["report"]["trendWindows"],
+            {
+                "current": {"start": "2026-01-01", "end": "2026-06-30"},
+                "priorYear": {"start": "2025-01-01", "end": "2025-06-30"},
+            },
+        )
 
     def test_missing_previous_baseline_disables_only_previous_comparison_job(self) -> None:
         manifest = self.run_plan(report_type="weekly")
@@ -242,6 +353,85 @@ class BuildQueryPlanTests(unittest.TestCase):
                     "rowCount": 1240,
                 }
             ],
+        )
+        self.assertTrue(current_window["isFullyCovered"])
+        self.assertEqual(current_window["gaps"], [])
+
+    def test_adjacent_coverage_sources_make_requested_window_complete(self) -> None:
+        manifest = self.run_plan(
+            report_type="weekly",
+            coverage_dir=self.coverage_with_complete_weekly_trend_union(),
+        )
+
+        current_window = manifest["coverage"]["business"]["windows"]["current"]
+        self.assertTrue(current_window["isFullyCovered"])
+        self.assertEqual(current_window["gaps"], [])
+        self.assertEqual(
+            current_window["observed"],
+            [
+                {
+                    "startDate": "2026-07-01",
+                    "endDate": "2026-07-15",
+                    "sourceDocumentId": "doc_synth_business_20260701_20260715",
+                    "importBatchId": "imp_synth_business_20260701_20260715",
+                    "rowCount": 610,
+                },
+                {
+                    "startDate": "2026-07-16",
+                    "endDate": "2026-07-31",
+                    "sourceDocumentId": "doc_synth_business_20260716_20260731",
+                    "importBatchId": "imp_synth_business_20260716_20260731",
+                    "rowCount": 630,
+                },
+            ],
+        )
+        self.assertNotIn(
+            {
+                "code": "COVERAGE_WINDOW_PARTIAL",
+                "dataset": "business",
+                "window": "trend",
+                "module": "weeklyTrend",
+                "gaps": [{"startDate": "2026-04-06", "endDate": "2026-07-26"}],
+            },
+            manifest["notices"],
+        )
+
+    def test_partial_trend_coverage_keeps_jobs_and_emits_gap_notices(self) -> None:
+        weekly = self.run_plan(report_type="weekly")
+        monthly = self.run_plan(report_type="monthly")
+
+        self.assertIn("business_16_week_store_trend", set(self.job_ids(weekly)))
+        self.assertIn("business_6_month_store_trend", set(self.job_ids(monthly)))
+        self.assertIn("business_6_month_prior_year_store_trend", set(self.job_ids(monthly)))
+        self.assertIn(
+            {
+                "code": "COVERAGE_WINDOW_PARTIAL",
+                "dataset": "business",
+                "window": "trend",
+                "module": "weeklyTrend",
+                "gaps": [{"startDate": "2026-04-06", "endDate": "2026-06-30"}],
+            },
+            weekly["notices"],
+        )
+        self.assertIn(
+            {
+                "code": "COVERAGE_WINDOW_PARTIAL",
+                "dataset": "business",
+                "window": "trend",
+                "module": "monthlyTrend",
+                "gaps": [{"startDate": "2026-02-01", "endDate": "2026-06-30"}],
+            },
+            monthly["notices"],
+        )
+        self.assertIn(
+            {
+                "code": "COVERAGE_WINDOW_PARTIAL",
+                "dataset": "business",
+                "window": "prior_year_trend",
+                "module": "monthlyTrend",
+                "gaps": [{"startDate": "2025-02-01", "endDate": "2025-06-30"}],
+            },
+            monthly["notices"],
         )
 
     def test_partial_coverage_disables_only_dependent_dish_modules(self) -> None:
@@ -388,6 +578,18 @@ class BuildQueryPlanTests(unittest.TestCase):
 
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("exceeds maxSelectedFields", completed.stderr)
+
+    def test_detail_sort_field_limit_uses_registry_advertised_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = json.loads((FIXTURES / "registry_response.json").read_text(encoding="utf-8"))
+            registry["limits"]["maxSortFields"] = 1
+            registry_path = Path(tmp) / "registry_response.json"
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+            completed = self.run_plan_expect_error(registry_response=registry_path)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("exceeds maxSortFields", completed.stderr)
 
     def test_cli_help_documents_supported_report_types(self) -> None:
         completed = subprocess.run(

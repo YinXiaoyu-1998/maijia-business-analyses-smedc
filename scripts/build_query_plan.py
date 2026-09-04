@@ -99,6 +99,31 @@ def subtract_months(value: date, months: int) -> date:
     return date(year, month, 1)
 
 
+def month_end(year: int, month: int) -> date:
+    if month == 12:
+        return date(year, 12, 31)
+    return date(year, month + 1, 1) - timedelta(days=1)
+
+
+def same_date_previous_year(value: date) -> date:
+    try:
+        return date(value.year - 1, value.month, value.day)
+    except ValueError:
+        return month_end(value.year - 1, value.month)
+
+
+def weekly_trend_window(current_end: date) -> DateWindow:
+    days_since_sunday = (current_end.weekday() + 1) % 7
+    end = current_end - timedelta(days=days_since_sunday)
+    return DateWindow("trend", end - timedelta(days=(16 * 7) - 1), end)
+
+
+def monthly_trend_window(current_end: date) -> DateWindow:
+    current_month_end = month_end(current_end.year, current_end.month)
+    end = current_end if current_end == current_month_end else date(current_end.year, current_end.month, 1) - timedelta(days=1)
+    return DateWindow("trend", subtract_months(end, 5), end)
+
+
 def registry_by_dataset(registry: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
     datasets = registry.get("datasets")
     limits = registry.get("limits")
@@ -268,6 +293,31 @@ def observed_window_intersections(coverage: dict[str, Any], window: DateWindow) 
     return sorted(observed, key=lambda item: (item["startDate"], item["endDate"], item.get("importBatchId") or ""))
 
 
+def coverage_gaps(coverage: dict[str, Any], window: DateWindow) -> list[dict[str, str]]:
+    if coverage.get("metadataPolicy") != "window":
+        return []
+    gaps: list[dict[str, str]] = []
+    cursor = window.start
+    for observed in observed_window_intersections(coverage, window):
+        observed_start = date.fromisoformat(observed["startDate"])
+        observed_end = date.fromisoformat(observed["endDate"])
+        if observed_end < cursor:
+            continue
+        if observed_start > cursor:
+            gaps.append(
+                {
+                    "startDate": cursor.isoformat(),
+                    "endDate": (observed_start - timedelta(days=1)).isoformat(),
+                }
+            )
+        cursor = max(cursor, observed_end + timedelta(days=1))
+        if cursor > window.end:
+            break
+    if cursor <= window.end:
+        gaps.append({"startDate": cursor.isoformat(), "endDate": window.end.isoformat()})
+    return gaps
+
+
 def source_summaries(coverage: dict[str, Any], windows: dict[str, DateWindow]) -> dict[str, Any]:
     dataset_name = coverage["dataset"]
     result: dict[str, Any] = {
@@ -296,10 +346,13 @@ def source_summaries(coverage: dict[str, Any], windows: dict[str, DateWindow]) -
             }
         )
     for name, window in windows.items():
+        gaps = coverage_gaps(coverage, window)
         result["windows"][name] = {
             "requested": window.as_json(),
             "hasReadableOverlap": coverage_overlaps(coverage, window),
             "observed": observed_window_intersections(coverage, window),
+            "isFullyCovered": not gaps,
+            "gaps": gaps,
         }
     return result
 
@@ -383,20 +436,33 @@ def validate_job(job: dict[str, Any], registry: dict[str, dict[str, Any]], limit
     fields = dataset["_fields"]
     if query["registryVersion"] != dataset["registryVersion"]:
         raise PlanError(f"job {job['id']} uses stale registry version")
-    if query.get("mode") == "detail":
+    allowed_query_keys = {"dataset", "registryVersion", "filter", "groupBy", "aggregates", "select", "sort", "page"}
+    unknown_keys = set(query) - allowed_query_keys
+    if unknown_keys:
+        raise PlanError(f"job {job['id']} uses unsupported query keys: {', '.join(sorted(unknown_keys))}")
+    page = query.get("page")
+    if not isinstance(page, dict) or not isinstance(page.get("limit"), int) or page["limit"] <= 0:
+        raise PlanError(f"job {job['id']} has invalid page limit")
+    is_detail = "select" in query
+    is_aggregate = "aggregates" in query
+    if is_detail == is_aggregate:
+        raise PlanError(f"job {job['id']} must declare exactly one query shape")
+    if is_detail:
         selected = set(query.get("select", []))
         if len(selected) > limits["maxSelectedFields"]:
             raise PlanError(f"job {job['id']} exceeds maxSelectedFields")
+        if len(query.get("sort", [])) > limits["maxSortFields"]:
+            raise PlanError(f"job {job['id']} exceeds maxSortFields")
         for field_name in selected:
             if field_name not in fields:
                 raise PlanError(f"registry dataset {dataset_name} is missing field {field_name}")
-        for order in query.get("orderBy", []):
+        for order in query.get("sort", []):
             field_name = order.get("field")
             if field_name not in selected:
                 raise PlanError(f"job {job['id']} sorts by unselected field {field_name}")
             if not fields[field_name]["capabilities"].get("sort"):
                 raise PlanError(f"field {field_name} lacks sort capability")
-        if query.get("limit", 0) > limits["maxRows"]:
+        if page["limit"] > limits["maxRows"]:
             raise PlanError(f"job {job['id']} exceeds maxRows")
         return
 
@@ -404,9 +470,9 @@ def validate_job(job: dict[str, Any], registry: dict[str, dict[str, Any]], limit
         raise PlanError(f"job {job['id']} exceeds maxGroupByFields")
     if len(query.get("aggregates", [])) > limits["maxAggregates"]:
         raise PlanError(f"job {job['id']} exceeds maxAggregates")
-    if query.get("limit", 0) > limits["maxAggregateGroups"]:
+    if page["limit"] > limits["maxAggregateGroups"]:
         raise PlanError(f"job {job['id']} exceeds maxAggregateGroups")
-    if len(query.get("orderBy", [])) > limits["maxSortFields"]:
+    if len(query.get("sort", [])) > limits["maxSortFields"]:
         raise PlanError(f"job {job['id']} exceeds maxSortFields")
     if "filter" in query:
         filter_field = query["filter"].get("field")
@@ -432,7 +498,7 @@ def validate_job(job: dict[str, Any], registry: dict[str, dict[str, Any]], limit
                 raise PlanError(f"field {weight_field} lacks aggregate capability")
     ensure_numeric_weighted_avg(registry, dataset_name, query.get("aggregates", []))
     sortable = set(query.get("groupBy", [])) | aliases
-    for order in query.get("orderBy", []):
+    for order in query.get("sort", []):
         if order.get("field") not in sortable:
             raise PlanError(f"job {job['id']} sorts by undeclared field {order.get('field')}")
 
@@ -456,11 +522,10 @@ def aggregate_job(
     query: dict[str, Any] = {
         "dataset": dataset_name,
         "registryVersion": registry[dataset_name]["registryVersion"],
-        "mode": "aggregate",
         "groupBy": group_by,
         "aggregates": aggregates,
-        "orderBy": order_by,
-        "limit": min(limits["maxAggregateGroups"], 200),
+        "sort": order_by,
+        "page": {"limit": min(limits["maxAggregateGroups"], 200)},
     }
     if window and date_field:
         query["filter"] = {"field": date_field, "op": "between", "value": [window.start.isoformat(), window.end.isoformat()]}
@@ -491,13 +556,12 @@ def catalog_job(
         "input": {
             "dataset": "dish_catalog",
             "registryVersion": registry["dish_catalog"]["registryVersion"],
-            "mode": "detail",
             "select": selected,
-            "orderBy": [
+            "sort": [
                 {"field": "snapshot_date", "direction": "desc"},
                 {"field": "dish_name", "direction": "asc"},
             ],
-            "limit": min(limits["maxRows"], 200),
+            "page": {"limit": min(limits["maxRows"], 200)},
         },
         "outputFile": "query-results/dish_catalog_current_snapshot.json",
         "module": "stallAttribution",
@@ -508,15 +572,27 @@ def make_notice(code: str, dataset: str, window: str, module: str) -> dict[str, 
     return {"code": code, "dataset": dataset, "window": window, "module": module}
 
 
+def make_partial_notice(dataset: str, window: DateWindow, module: str, gaps: list[dict[str, str]]) -> dict[str, Any]:
+    return {**make_notice("COVERAGE_WINDOW_PARTIAL", dataset, window.name, module), "gaps": gaps}
+
+
+def sort_notices(notices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        notices,
+        key=lambda notice: (notice["code"], notice["dataset"], notice["window"], notice["module"]),
+    )
+
+
 def add_if_covered(
     jobs: list[dict[str, Any]],
-    notices: list[dict[str, str]],
+    notices: list[dict[str, Any]],
     coverage: dict[str, dict[str, Any]],
     *,
     job: dict[str, Any],
     datasets: list[str],
     window: DateWindow | None,
     module: str,
+    notice_partial: bool = False,
 ) -> None:
     for dataset_name in datasets:
         dataset_coverage = coverage[dataset_name]
@@ -526,6 +602,11 @@ def add_if_covered(
             notices.append(make_notice(code, dataset_name, window.name if window else "current", module))
             return
     jobs.append(job)
+    if notice_partial and window is not None:
+        for dataset_name in datasets:
+            gaps = coverage_gaps(coverage[dataset_name], window)
+            if gaps:
+                notices.append(make_partial_notice(dataset_name, window, module, gaps))
 
 
 def build_plan(
@@ -556,7 +637,8 @@ def build_plan(
     business_aggs = business_aggregates(config, registry)
     dish_aggs = dish_aggregates(config, registry)
     jobs: list[dict[str, Any]] = []
-    notices: list[dict[str, str]] = []
+    notices: list[dict[str, Any]] = []
+    trend_windows: dict[str, dict[str, str]] = {}
 
     def add_business(job_id: str, module: str, window_name: str, group_by: list[str], output_file: str) -> None:
         add_if_covered(
@@ -627,15 +709,16 @@ def build_plan(
             add_business(job_id, module, "current", group_by, output_file)
     else:
         if report_type == "weekly":
-            trend_window = DateWindow("trend", windows["current"].end - timedelta(days=7 * 16 - 1), windows["current"].end)
+            trend_window = weekly_trend_window(windows["current"].end)
             trend_id = "business_16_week_store_trend"
             trend_group = [business_store, business_week]
             trend_module = "weeklyTrend"
         else:
-            trend_window = DateWindow("trend", subtract_months(windows["current"].end, 5), windows["current"].end)
+            trend_window = monthly_trend_window(windows["current"].end)
             trend_id = "business_6_month_store_trend"
             trend_group = [business_store, business_month]
             trend_module = "monthlyTrend"
+        trend_windows["current"] = trend_window.as_json()
         add_if_covered(
             jobs,
             notices,
@@ -655,13 +738,15 @@ def build_plan(
             datasets=["business"],
             window=trend_window,
             module=trend_module,
+            notice_partial=True,
         )
         if report_type == "monthly":
             prior_window = DateWindow(
                 "prior_year_trend",
-                date(trend_window.start.year - 1, trend_window.start.month, trend_window.start.day),
-                date(trend_window.end.year - 1, trend_window.end.month, trend_window.end.day),
+                same_date_previous_year(trend_window.start),
+                same_date_previous_year(trend_window.end),
             )
+            trend_windows["priorYear"] = prior_window.as_json()
             add_if_covered(
                 jobs,
                 notices,
@@ -681,6 +766,7 @@ def build_plan(
                 datasets=["business"],
                 window=prior_window,
                 module="monthlyTrend",
+                notice_partial=True,
             )
         add_business(
             "business_current_channel_platform_mix",
@@ -736,15 +822,13 @@ def build_plan(
         raise PlanError("duplicate job ids are not allowed")
     for job in ordered_jobs:
         validate_job(job, registry, limits)
-    ordered_notices = sorted(
-        notices,
-        key=lambda notice: (notice["code"], notice["dataset"], notice["window"], notice["module"]),
-    )
+    ordered_notices = sort_notices(notices)
     return {
         "schemaVersion": config["schemaVersion"],
         "report": {
             "type": report_type,
             "windows": {name: window.as_json() for name, window in windows.items()},
+            "trendWindows": trend_windows,
         },
         "coverage": coverage_manifest,
         "notices": ordered_notices,
@@ -788,7 +872,7 @@ def main(argv: list[str]) -> int:
         validate_config_fields(config, registry)
         coverage, coverage_notices = load_coverage(config, registry, args.coverage_dir)
         manifest = build_plan(config, registry, limits, coverage, args.report_type, windows)
-        manifest["notices"].extend(coverage_notices)
+        manifest["notices"] = sort_notices([*manifest["notices"], *coverage_notices])
         manifest["outputContract"] = {
             "tool": "query_structured_dataset",
             "limits": limits,
