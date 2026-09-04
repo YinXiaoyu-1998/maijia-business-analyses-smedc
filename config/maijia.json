@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "company": {
+    "displayName": "麦家小馆",
+    "englishName": "Maijia Xiaoguan"
+  },
+  "storeNormalization": {
+    "trimWhitespace": true,
+    "removeCompanyPrefix": true,
+    "knownSuffixes": ["店"]
+  },
+  "storeBuckets": {
+    "large": ["荣京道店", "经海路店", "国粹苑店", "上海沙龙店"],
+    "small": ["龙玥城店", "文化园店", "苏州街店", "常营店", "通州保利店"]
+  },
+  "datasets": {
+    "business": {
+      "dataset": "business",
+      "metadataPolicy": "window",
+      "registryVersionSource": "list_structured_datasets",
+      "requiredFor": ["coreBusiness", "weeklyReport", "monthlyReport", "trend", "channelMix", "daypartAttribution", "productSalesPer10k"]
+    },
+    "dishes": {
+      "dataset": "dishes",
+      "metadataPolicy": "window",
+      "registryVersionSource": "list_structured_datasets",
+      "requiredFor": ["stallAttribution", "stallSalesMix", "productSalesPer10k"]
+    },
+    "dish_catalog": {
+      "dataset": "dish_catalog",
+      "metadataPolicy": "snapshot",
+      "registryVersionSource": "list_structured_datasets",
+      "requiredFor": ["stallAttribution", "stallSalesMix", "productSalesPer10k"]
+    }
+  },
+  "fields": {
+    "business": {
+      "date": "business_date",
+      "week": "business_week",
+      "month": "business_month",
+      "store": "store_name",
+      "city": "city",
+      "merchant": "merchant_id",
+      "orderCategory": "order_category",
+      "orderSource": "order_source",
+      "mealPeriod": "meal_period",
+      "timeSlot": "time_slot",
+      "membership": "is_member",
+      "diningMethod": "dining_method",
+      "grossSales": "gross_sales_amount",
+      "orderRevenue": "order_revenue",
+      "discount": "discount_amount",
+      "validOrders": "valid_order_count",
+      "positiveOrders": "positive_order_count",
+      "reverseOrders": "reverse_order_count",
+      "settledOrders": "settled_order_count",
+      "dinerCount": "diner_count",
+      "consumedTables": "consumed_table_count",
+      "tableCount": "table_count",
+      "tableUses": "table_use_count",
+      "tableDayCount": "table_day_count",
+      "businessDayCount": "business_day_count",
+      "dineInGrossSales": "dine_in_gross_sales_amount",
+      "dineInRevenue": "dine_in_revenue",
+      "dineInDiscount": "dine_in_discount_amount",
+      "dineInOrders": "dine_in_order_count",
+      "dineInPositiveOrders": "dine_in_positive_order_count",
+      "dineInRefundAmount": "dine_in_refund_amount",
+      "deliveryGrossSales": "delivery_gross_sales_amount",
+      "deliveryRevenue": "delivery_revenue",
+      "deliveryDiscount": "delivery_discount_amount",
+      "deliveryOrders": "delivery_order_count",
+      "deliveryPositiveOrders": "delivery_positive_order_count",
+      "deliveryRefundAmount": "delivery_refund_amount",
+      "meituanDeliveryRevenue": "meituan_delivery_revenue",
+      "elemeDeliveryRevenue": "eleme_delivery_revenue",
+      "jdDeliveryRevenue": "jd_delivery_revenue",
+      "memberGrossSales": "member_gross_sales_amount",
+      "memberRevenue": "member_revenue",
+      "discountRate": "discount_rate",
+      "openRate": "open_rate",
+      "turnoverRate": "turnover_rate"
+    },
+    "dishes": {
+      "date": "business_date",
+      "week": "business_week",
+      "month": "business_month",
+      "store": "store_name",
+      "city": "city",
+      "merchant": "merchant_id",
+      "orderTime": "order_time",
+      "orderCategory": "order_category",
+      "timeSlot": "time_slot",
+      "productName": "product_name",
+      "matchedProductName": "matched_product_name",
+      "organizationCode": "organization_code",
+      "quantity": "dish_sales_quantity",
+      "sales": "dish_sales_amount",
+      "revenue": "dish_revenue",
+      "discount": "dish_discount_amount",
+      "totalSales": "dish_total_sales_amount",
+      "totalRevenue": "dish_total_revenue",
+      "totalDiscount": "dish_total_discount_amount",
+      "positiveOrders": "dish_positive_order_count",
+      "returnedQuantity": "returned_dish_quantity",
+      "returnedAmount": "returned_dish_amount",
+      "servingOrders": "serving_order_count",
+      "afterDiscountGrossMargin": "after_discount_gross_margin_amount"
+    },
+    "dish_catalog": {
+      "snapshotDate": "snapshot_date",
+      "dishName": "dish_name",
+      "baseCategory": "base_category_name",
+      "stall": "base_category_name",
+      "spuId": "spu_id",
+      "skuId": "sku_id",
+      "alias": "dish_alias",
+      "price": "sale_price"
+    }
+  },
+  "dimensions": {
+    "store": ["business.store", "dishes.store"],
+    "period": ["business.date", "business.week", "business.month", "dishes.date", "dishes.week", "dishes.month"],
+    "channel": ["business.orderCategory", "business.orderSource", "business.diningMethod", "dishes.orderCategory"],
+    "daypart": ["business.mealPeriod", "business.timeSlot", "dishes.timeSlot"],
+    "dish": ["dishes.productName", "dishes.matchedProductName"],
+    "catalog": ["dish_catalog.dishName", "dish_catalog.baseCategory", "dish_catalog.stall"]
+  },
+  "measures": {
+    "businessRevenue": {
+      "field": "business.orderRevenue",
+      "aggregate": "sum",
+      "displayName": "订单营业收入"
+    },
+    "grossSales": {
+      "field": "business.grossSales",
+      "aggregate": "sum",
+      "displayName": "营业额"
+    },
+    "discount": {
+      "field": "business.discount",
+      "aggregate": "sum",
+      "displayName": "优惠金额"
+    },
+    "orders": {
+      "field": "business.positiveOrders",
+      "aggregate": "sum",
+      "displayName": "正向订单量"
+    },
+    "diners": {
+      "field": "business.dinerCount",
+      "aggregate": "sum",
+      "displayName": "用餐人数"
+    },
+    "openRate": {
+      "field": "business.openRate",
+      "weightField": "business.tableDayCount",
+      "aggregate": "weightedAvg",
+      "displayName": "开台率"
+    },
+    "turnoverRate": {
+      "field": "business.turnoverRate",
+      "weightField": "business.tableDayCount",
+      "aggregate": "weightedAvg",
+      "displayName": "翻台率"
+    },
+    "dishQuantity": {
+      "field": "dishes.quantity",
+      "aggregate": "sum",
+      "displayName": "菜品销售数量"
+    },
+    "dishRevenue": {
+      "field": "dishes.revenue",
+      "aggregate": "sum",
+      "displayName": "菜品收入"
+    }
+  },
+  "reportModules": {
+    "coreBusiness": {
+      "requiredDatasets": ["business"],
+      "partialPolicy": "renderWithCurrentPeriodBusinessData"
+    },
+    "weeklyTrend": {
+      "requiredDatasets": ["business"],
+      "bucketCount": 16,
+      "partialPolicy": "renderAvailableCompleteWeeks"
+    },
+    "monthlyTrend": {
+      "requiredDatasets": ["business"],
+      "bucketCount": 6,
+      "partialPolicy": "renderAvailableCompleteMonths"
+    },
+    "channelMix": {
+      "requiredDatasets": ["business"],
+      "partialPolicy": "renderWhenBusinessRowsCoverRequestedPeriod"
+    },
+    "daypartAttribution": {
+      "requiredDatasets": ["business"],
+      "partialPolicy": "renderAvailableComparisons"
+    },
+    "stallAttribution": {
+      "requiredDatasets": ["dishes", "dish_catalog"],
+      "partialPolicy": "disableWhenEitherInputMissing"
+    },
+    "stallSalesMix": {
+      "requiredDatasets": ["business", "dishes", "dish_catalog"],
+      "partialPolicy": "disableWhenDishOrCatalogMissing"
+    },
+    "productSalesPer10k": {
+      "requiredDatasets": ["business", "dishes", "dish_catalog"],
+      "panels": ["orderRevenue", "grossSales"],
+      "partialPolicy": "disableWhenDishOrCatalogMissing"
+    }
+  },
+  "queryLimits": {
+    "maxGroupByFields": 4,
+    "maxAggregates": 12,
+    "maxAggregateGroups": 200,
+    "maxRows": 200,
+    "maxSortFields": 2,
+    "maxConditions": 20,
+    "maxInValues": 100,
+    "cursorTtlSeconds": 900
+  }
+}

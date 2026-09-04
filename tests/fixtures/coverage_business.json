@@ -1,0 +1,25 @@
+{
+  "dataset": "business",
+  "registryVersion": "business.2026-09-04.v2",
+  "metadataPolicy": "window",
+  "sources": [
+    {
+      "importBatchId": "imp_synth_business_202607",
+      "sourceDocumentId": "doc_synth_business_202607",
+      "sourceDocumentTitle": "Synthetic Maijia Business Window 2026-07",
+      "startDate": "2026-07-01",
+      "endDate": "2026-07-31",
+      "appliedAt": "2026-08-01T08:30:00.000Z",
+      "rowCount": 1240
+    },
+    {
+      "importBatchId": "imp_synth_business_202507",
+      "sourceDocumentId": "doc_synth_business_202507",
+      "sourceDocumentTitle": "Synthetic Maijia Business Window 2025-07",
+      "startDate": "2025-07-01",
+      "endDate": "2025-07-31",
+      "appliedAt": "2026-08-01T08:35:00.000Z",
+      "rowCount": 1198
+    }
+  ]
+}

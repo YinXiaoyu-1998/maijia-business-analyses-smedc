@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+output/
+runs/
+
+*.html
+*.csv
+*summary.json
+*summary.md
+*summary.txt
+
+!tests/
+!tests/fixtures/
+!tests/fixtures/**

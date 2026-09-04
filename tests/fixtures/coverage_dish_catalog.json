@@ -1,0 +1,16 @@
+{
+  "dataset": "dish_catalog",
+  "registryVersion": "dish_catalog.2026-08-22.v1",
+  "metadataPolicy": "snapshot",
+  "sources": [
+    {
+      "importBatchId": "imp_synth_catalog_20260731",
+      "sourceDocumentId": "doc_synth_catalog_20260731",
+      "sourceDocumentTitle": "Synthetic Maijia Dish Catalog Snapshot 2026-07-31",
+      "startDate": "2026-07-31",
+      "endDate": "2026-07-31",
+      "appliedAt": "2026-08-01T08:50:00.000Z",
+      "rowCount": 96
+    }
+  ]
+}
