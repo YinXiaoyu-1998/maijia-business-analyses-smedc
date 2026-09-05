@@ -131,6 +131,25 @@ def dec(value: Any) -> Decimal:
     return number / divisor
 
 
+def has_number(source: dict[str, Any], key: str) -> bool:
+    if key not in source:
+        return False
+    value = source[key]
+    if value is None:
+        return False
+    return str(value).strip() not in {"", "--", "null", "None", "合计"}
+
+
+def optional_dec(source: dict[str, Any], key: str) -> Decimal | None:
+    if not has_number(source, key):
+        return None
+    return dec(source.get(key))
+
+
+def optional_round(source: dict[str, Any], key: str, digits: int = 2) -> float | None:
+    return rounded(optional_dec(source, key), digits)
+
+
 def div(numerator: Decimal, denominator: Decimal) -> Decimal | None:
     if denominator == 0:
         return None
@@ -145,71 +164,83 @@ def rounded(value: Decimal | None, digits: int) -> float | None:
 
 
 def metric_row(source: dict[str, Any]) -> dict[str, Any]:
-    gross = dec(source.get("gross_sales"))
-    revenue = dec(source.get("order_revenue"))
-    discount = dec(source.get("discount"))
-    positive_orders = dec(source.get("positive_orders"))
-    diners = dec(source.get("diners"))
-    consumed_tables = dec(source.get("consumed_tables"))
-    member_revenue = dec(source.get("member_revenue"))
-    delivery_revenue = dec(source.get("delivery_revenue"))
-    delivery_orders = dec(source.get("delivery_positive_orders"))
-    dine_in_revenue = dec(source.get("dine_in_revenue"))
-    dine_in_orders = dec(source.get("dine_in_positive_orders"))
+    gross = optional_dec(source, "gross_sales")
+    revenue = optional_dec(source, "order_revenue")
+    discount = optional_dec(source, "discount")
+    positive_orders = optional_dec(source, "positive_orders")
+    diners = optional_dec(source, "diners")
+    consumed_tables = optional_dec(source, "consumed_tables")
+    member_revenue = optional_dec(source, "member_revenue")
+    delivery_revenue = optional_dec(source, "delivery_revenue")
+    delivery_orders = optional_dec(source, "delivery_positive_orders")
+    dine_in_revenue = optional_dec(source, "dine_in_revenue")
+    dine_in_orders = optional_dec(source, "dine_in_positive_orders")
     row: dict[str, Any] = {
-        "rows": int(dec(source.get("rows") or source.get("row_count") or 1)),
+        "rows": int(dec(source.get("rows") if has_number(source, "rows") else source.get("row_count") if has_number(source, "row_count") else 1)),
         "active_days": source.get("active_days"),
         "gross_sales": rounded(gross, 2),
         "net_revenue": rounded(revenue, 2),
         "discount_amount": rounded(discount, 2),
-        "discount_rate": rounded(div(discount, gross), 4),
+        "discount_rate": rounded(div(discount, gross), 4) if discount is not None and gross is not None else None,
         "positive_orders": rounded(positive_orders, 2),
-        "valid_orders": rounded(dec(source.get("valid_orders")), 2),
-        "settled_orders": rounded(dec(source.get("settled_orders")), 2),
-        "reverse_orders": rounded(dec(source.get("reverse_orders")), 2),
-        "post_discount_aov": rounded(div(revenue, positive_orders), 2),
+        "valid_orders": optional_round(source, "valid_orders"),
+        "settled_orders": optional_round(source, "settled_orders"),
+        "reverse_orders": optional_round(source, "reverse_orders"),
+        "post_discount_aov": rounded(div(revenue, positive_orders), 2) if revenue is not None and positive_orders is not None else None,
         "customer_count": rounded(diners, 2),
-        "revenue_per_customer": rounded(div(revenue, diners), 2),
+        "revenue_per_customer": rounded(div(revenue, diners), 2) if revenue is not None and diners is not None else None,
         "consumed_tables": rounded(consumed_tables, 2),
-        "revenue_per_table": rounded(div(revenue, consumed_tables), 2),
-        "open_rate": rounded(dec(source.get("weighted_open_rate")), 4),
-        "turnover_rate": rounded(dec(source.get("weighted_turnover_rate")), 4),
+        "revenue_per_table": rounded(div(revenue, consumed_tables), 2) if revenue is not None and consumed_tables is not None else None,
+        "open_rate": optional_round(source, "weighted_open_rate", 4),
+        "turnover_rate": optional_round(source, "weighted_turnover_rate", 4),
         "dine_in_revenue": rounded(dine_in_revenue, 2),
         "dine_in_positive_orders": rounded(dine_in_orders, 2),
-        "dine_in_aov": rounded(div(dine_in_revenue, dine_in_orders), 2),
+        "dine_in_aov": rounded(div(dine_in_revenue, dine_in_orders), 2) if dine_in_revenue is not None and dine_in_orders is not None else None,
         "delivery_revenue": rounded(delivery_revenue, 2),
         "delivery_positive_orders": rounded(delivery_orders, 2),
-        "delivery_aov": rounded(div(delivery_revenue, delivery_orders), 2),
-        "delivery_revenue_share": rounded(div(delivery_revenue, revenue), 4),
-        "meituan_delivery_revenue": rounded(dec(source.get("meituan_delivery_revenue")), 2),
-        "eleme_delivery_revenue": rounded(dec(source.get("eleme_delivery_revenue")), 2),
-        "jd_delivery_revenue": rounded(dec(source.get("jd_delivery_revenue")), 2),
+        "delivery_aov": rounded(div(delivery_revenue, delivery_orders), 2) if delivery_revenue is not None and delivery_orders is not None else None,
+        "delivery_revenue_share": rounded(div(delivery_revenue, revenue), 4) if delivery_revenue is not None and revenue is not None else None,
+        "meituan_delivery_revenue": optional_round(source, "meituan_delivery_revenue"),
+        "eleme_delivery_revenue": optional_round(source, "eleme_delivery_revenue"),
+        "jd_delivery_revenue": optional_round(source, "jd_delivery_revenue"),
         "member_revenue": rounded(member_revenue, 2),
-        "member_revenue_share": rounded(div(member_revenue, revenue), 4),
+        "member_revenue_share": rounded(div(member_revenue, revenue), 4) if member_revenue is not None and revenue is not None else None,
     }
     return row
 
 
 def aggregate_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    source: dict[str, Any] = defaultdict(Decimal)
+    source: dict[str, Any] = {}
+    sums: dict[str, Decimal] = defaultdict(Decimal)
+    present: set[str] = set()
     weighted_open = Decimal("0")
     weighted_turnover = Decimal("0")
     weighted_denominator = Decimal("0")
+    has_open = False
+    has_turnover = False
     count = 0
     for row in rows:
         count += 1
         for source_key in MONEY_KEYS:
-            source[source_key] += dec(row.get(source_key))
-        weight = dec(row.get("order_revenue")) or Decimal("1")
-        if row.get("weighted_open_rate") is not None:
+            if has_number(row, source_key):
+                sums[source_key] += dec(row.get(source_key))
+                present.add(source_key)
+        weight = optional_dec(row, "order_revenue") or Decimal("1")
+        if has_number(row, "weighted_open_rate"):
             weighted_open += dec(row.get("weighted_open_rate")) * weight
-        if row.get("weighted_turnover_rate") is not None:
+            has_open = True
+        if has_number(row, "weighted_turnover_rate"):
             weighted_turnover += dec(row.get("weighted_turnover_rate")) * weight
+            has_turnover = True
         weighted_denominator += weight
+    for key in present:
+        source[key] = sums[key]
     source["rows"] = count
     if weighted_denominator:
-        source["weighted_open_rate"] = weighted_open / weighted_denominator
-        source["weighted_turnover_rate"] = weighted_turnover / weighted_denominator
+        if has_open:
+            source["weighted_open_rate"] = weighted_open / weighted_denominator
+        if has_turnover:
+            source["weighted_turnover_rate"] = weighted_turnover / weighted_denominator
     return dict(source)
 
 
@@ -252,6 +283,8 @@ def store_metric_rows(rows: list[dict[str, Any]], label_fields: dict[str, Any] |
 def diff(current: dict[str, Any] | None, baseline: dict[str, Any] | None, field: str) -> tuple[float | None, float | None]:
     if not current or not baseline:
         return None, None
+    if current.get(field) is None or baseline.get(field) is None:
+        return None, None
     current_value = dec(current.get(field))
     baseline_value = dec(baseline.get(field))
     delta = current_value - baseline_value
@@ -283,6 +316,8 @@ def comparison_rows(current_rows: list[dict[str, Any]], previous_rows: list[dict
 
 
 def classify_store(row: dict[str, Any]) -> str:
+    if row.get("wow_net_revenue_pct") is None or row.get("yoy_net_revenue_pct") is None:
+        return "对比不足"
     wow = dec(row.get("wow_net_revenue_pct"))
     yoy = dec(row.get("yoy_net_revenue_pct"))
     if wow >= 0 and yoy >= 0:
@@ -471,6 +506,21 @@ def stall_and_product_outputs(
             },
         )
         product_groups[key]["quantity"] += quantity
+        all_key = (ALL_STORES_LABEL, product, sales_class, stall)
+        product_groups.setdefault(
+            all_key,
+            {
+                "period_key": "current",
+                "period_label": period_label,
+                "门店名称": ALL_STORES_LABEL,
+                "产品名称": product,
+                "销售分类": sales_class,
+                "档口": stall,
+                "quantity": Decimal("0"),
+                "search_names": " / ".join(filter(None, [str(row.get("matched_product_name") or ""), product])),
+            },
+        )
+        product_groups[all_key]["quantity"] += quantity
 
     stall_rows = []
     for (store, stall), values in stall_groups.items():
@@ -487,7 +537,7 @@ def stall_and_product_outputs(
                 "share": rounded(div(values["stall_income"], denominator), 4),
             }
         )
-    stall_rows.sort(key=lambda item: (item["档口"] == UNMATCHED_STALL, -(item["stall_income"] or 0), item["门店名称"], item["档口"]))
+    stall_rows.sort(key=lambda item: (item["门店名称"] != ALL_STORES_LABEL, item["档口"] == UNMATCHED_STALL, -(item["stall_income"] or 0), item["门店名称"], item["档口"]))
 
     product_rows = []
     for (store, product, sales_class, stall), row in product_groups.items():
@@ -504,7 +554,20 @@ def stall_and_product_outputs(
                 "units_per_10k_gross_sales": rounded(div(quantity * Decimal("10000"), gross_denominator), 4),
             }
         )
-    product_rows.sort(key=lambda item: (item["档口"] == UNMATCHED_STALL, item["门店名称"], item["产品名称"]))
+    product_rows.sort(key=lambda item: (item["门店名称"] != ALL_STORES_LABEL, item["档口"] == UNMATCHED_STALL, item["门店名称"], item["产品名称"], item["销售分类"]))
+
+    def top_per_store(rows: list[dict[str, Any]], amount_field: str) -> list[dict[str, Any]]:
+        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for item in rows:
+            grouped[item["门店名称"]].append(item)
+        output: list[dict[str, Any]] = []
+        for store in sorted(grouped, key=lambda name: (name != ALL_STORES_LABEL, name)):
+            ranked = sorted(
+                grouped[store],
+                key=lambda item: (-(item.get(amount_field) or 0), item.get("档口", ""), item.get("产品名称", ""), item.get("销售分类", "")),
+            )
+            output.extend(ranked[:1])
+        return output
 
     stall_sales_name = f"{prefix}_store_stall_sales_mix.csv"
     product_name = f"{prefix}_store_product_sales_per_10k.csv"
@@ -516,8 +579,8 @@ def stall_and_product_outputs(
     write_csv(output_dir / product_name, product_rows, ["period_key", "period_label", "门店名称", "产品名称", "销售分类", "档口", "quantity", "order_revenue", "units_per_10k", "gross_sales", "units_per_10k_gross_sales", "search_names"])
     write_csv(output_dir / stall_metrics_name, stall_rows, ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "share"])
     write_csv(output_dir / stall_comparison_name, stall_rows, ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "share"])
-    write_csv(output_dir / stall_driver_name, stall_rows[:1], ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "share"])
-    write_csv(output_dir / stall_dish_driver_name, product_rows[:10], ["period_key", "period_label", "门店名称", "产品名称", "销售分类", "档口", "quantity", "order_revenue", "units_per_10k", "gross_sales", "units_per_10k_gross_sales", "search_names"])
+    write_csv(output_dir / stall_driver_name, top_per_store(stall_rows, "stall_income"), ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "share"])
+    write_csv(output_dir / stall_dish_driver_name, top_per_store(product_rows, "quantity"), ["period_key", "period_label", "门店名称", "产品名称", "销售分类", "档口", "quantity", "order_revenue", "units_per_10k", "gross_sales", "units_per_10k_gross_sales", "search_names"])
     write_csv(
         output_dir / "dish_catalog_match_summary.csv",
         [

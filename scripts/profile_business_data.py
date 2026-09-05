@@ -10,12 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from report_common import (
-    METRIC_FIELDS,
     aggregate_rows,
-    channel_label,
-    dec,
     load_bundle,
     metric_row,
+    optional_dec,
     parse_bundle_cli,
     rows_for,
     rounded,
@@ -61,19 +59,22 @@ COMMON_FIELDS = [
 
 def diagnosis_metric_row(source: dict[str, Any]) -> dict[str, Any]:
     row = metric_row(source)
-    gross = dec(source.get("gross_sales"))
-    orders = dec(source.get("positive_orders"))
-    revenue = dec(source.get("order_revenue"))
+    gross = optional_dec(source, "gross_sales")
+    orders = optional_dec(source, "positive_orders")
+    dine_in_revenue = optional_dec(source, "dine_in_revenue")
+    pickup_revenue = optional_dec(source, "pickup_revenue")
+    refund_amount = optional_dec(source, "refund_amount_known")
+    revenue = optional_dec(source, "order_revenue")
     row.update(
         {
             "store_count": source.get("store_count"),
             "city_count": source.get("city_count"),
-            "pre_discount_aov": rounded((gross / orders) if orders else None, 2),
-            "pickup_revenue": 0.0,
-            "dine_in_revenue_share": rounded((dec(source.get("dine_in_revenue")) / revenue) if revenue else None, 4),
-            "pickup_revenue_share": 0.0,
-            "refund_amount_known": 0.0,
-            "refund_rate_known": 0.0,
+            "pre_discount_aov": rounded((gross / orders) if gross is not None and orders else None, 2),
+            "pickup_revenue": rounded(pickup_revenue, 2),
+            "dine_in_revenue_share": rounded((dine_in_revenue / revenue) if dine_in_revenue is not None and revenue else None, 4),
+            "pickup_revenue_share": rounded((pickup_revenue / revenue) if pickup_revenue is not None and revenue else None, 4),
+            "refund_amount_known": rounded(refund_amount, 2),
+            "refund_rate_known": rounded((refund_amount / gross) if refund_amount is not None and gross else None, 4),
         }
     )
     return row
@@ -95,7 +96,7 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
         for source in rows_for(bundle, "business_current_store_totals")
         for row in [{"门店名称": store_name(source.get("store_name"))}]
     ]
-    store_rows.sort(key=lambda item: -(item.get("net_revenue") or 0))
+    store_rows.sort(key=lambda item: (-(item.get("net_revenue") or 0), item["门店名称"], item["城市"], item["商户号"]))
 
     channel_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows_for(bundle, "business_current_channel_platform_mix"):
@@ -104,7 +105,7 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
         {"订单分类": key[0], "订单来源": key[1], **diagnosis_metric_row(aggregate_rows(group))}
         for key, group in channel_groups.items()
     ]
-    channel_rows.sort(key=lambda item: -(item.get("net_revenue") or 0))
+    channel_rows.sort(key=lambda item: (-(item.get("net_revenue") or 0), item["订单分类"], item["订单来源"]))
 
     daypart_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows_for(bundle, "business_current_efficiency"):
@@ -113,7 +114,7 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
         {"餐段": key[0], "时段": key[1], **diagnosis_metric_row(aggregate_rows(group))}
         for key, group in daypart_groups.items()
     ]
-    daypart_rows.sort(key=lambda item: -(item.get("net_revenue") or 0))
+    daypart_rows.sort(key=lambda item: (-(item.get("net_revenue") or 0), item["餐段"], item["时段"]))
 
     member_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows_for(bundle, "business_current_member_mix"):
@@ -126,13 +127,13 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
     for row in rows_for(bundle, "business_current_payment_mix"):
         payment_groups[str(row.get("order_source") or row.get("dining_method") or "未知")].append(row)
     payment_rows = [{"支付/来源": key, **diagnosis_metric_row(aggregate_rows(group))} for key, group in payment_groups.items()]
-    payment_rows.sort(key=lambda item: -(item.get("net_revenue") or 0))
+    payment_rows.sort(key=lambda item: (-(item.get("net_revenue") or 0), item["支付/来源"]))
 
     store_daypart_rows = [
         {"门店名称": store_name(row.get("store_name")), "城市": "未知城市", "商户号": "未知商户号", "餐段": str(row.get("meal_period") or "未知餐段"), "时段": str(row.get("time_slot") or "全部时段"), **diagnosis_metric_row(row)}
         for row in rows_for(bundle, "business_current_efficiency")
     ]
-    store_daypart_rows.sort(key=lambda item: (item["门店名称"], -(item.get("net_revenue") or 0)))
+    store_daypart_rows.sort(key=lambda item: (item["门店名称"], -(item.get("net_revenue") or 0), item["餐段"], item["时段"]))
 
     monthly_rows = [{"月": bundle["report"]["windows"]["current"]["start"][:7], **overall}]
     write_csv(output_dir / "monthly_trend.csv", monthly_rows, ["月"] + COMMON_FIELDS)
@@ -149,6 +150,9 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
             "report_type": "diagnosis",
             "windows": bundle["report"]["windows"],
             "registryVersions": bundle.get("registryVersions", {}),
+            "coverage": bundle.get("coverage", {}),
+            "jobs": bundle.get("jobs", []),
+            "outputContract": bundle.get("outputContract"),
         },
         "overall_kpis": overall,
         "top_stores_by_revenue": compact_top(store_rows, ["门店名称", "城市", "商户号"]),

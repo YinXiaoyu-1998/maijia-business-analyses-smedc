@@ -20,12 +20,16 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 class ProfileWeeklyDataTests(unittest.TestCase):
     maxDiff = None
 
-    def run_profile(self) -> tuple[Path, dict]:
+    def run_profile(self, bundle_data: dict | None = None) -> tuple[Path, dict]:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         output_dir = Path(tmp.name)
+        bundle_path = FIXTURE
+        if bundle_data is not None:
+            bundle_path = output_dir / "bundle.json"
+            bundle_path.write_text(json.dumps(bundle_data, ensure_ascii=False, indent=2), encoding="utf-8")
         completed = subprocess.run(
-            [sys.executable, str(SCRIPT), "--bundle", str(FIXTURE), "--output-dir", str(output_dir)],
+            [sys.executable, str(SCRIPT), "--bundle", str(bundle_path), "--output-dir", str(output_dir)],
             cwd=ROOT,
             text=True,
             capture_output=True,
@@ -41,6 +45,7 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         output_dir, summary = self.run_profile()
 
         self.assertEqual(summary["meta"]["report_grain"], "week")
+        self.assertEqual(summary["meta"]["coverage"], json.loads(FIXTURE.read_text(encoding="utf-8"))["coverage"])
         self.assertIn("OPTIONAL_MODULE_MISSING", [notice["code"] for notice in summary["notices"]])
         self.assertIn("weekly_meeting_summary.json", summary["meta"]["outputs"])
 
@@ -70,8 +75,48 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         self.assertEqual(stall_mix[0]["stall_income"], "3200.0")
         self.assertEqual(stall_mix[-1]["档口"], "未匹配")
 
+        stall_drivers = read_csv(output_dir / "weekly_store_stall_driver_summary.csv")
+        self.assertEqual([row["门店名称"] for row in stall_drivers], ["全体门店", "荣京道店", "龙玥城店"])
+
         product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
         beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
         self.assertEqual(beef["档口"], "面档")
         self.assertEqual(beef["units_per_10k"], "120.0")
         self.assertEqual(beef["units_per_10k_gross_sales"], "96.0")
+
+        product_details = read_csv(output_dir / "weekly_store_stall_dish_driver_detail.csv")
+        self.assertIn("荣京道店", {row["门店名称"] for row in product_details})
+        self.assertIn("龙玥城店", {row["门店名称"] for row in product_details})
+
+    def test_missing_baselines_keep_store_classification_unknown_and_notices_visible(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["coverage"] = {
+            "business": {
+                "dataset": "business",
+                "windows": {
+                    "previous": {
+                        "isFullyCovered": False,
+                        "gaps": [{"startDate": "2026-07-13", "endDate": "2026-07-19"}],
+                    }
+                },
+            }
+        }
+        bundle["notices"].append(
+            {
+                "code": "COVERAGE_WINDOW_MISSING",
+                "dataset": "business",
+                "window": "previous",
+                "module": "coreBusiness",
+            }
+        )
+        bundle["resultsByJobId"]["business_previous_store_totals"]["rows"] = [
+            row for row in bundle["resultsByJobId"]["business_previous_store_totals"]["rows"] if row["store_name"] != "龙玥城店"
+        ]
+
+        output_dir, summary = self.run_profile(bundle)
+
+        by_store = {row["门店名称"]: row for row in read_csv(output_dir / "weekly_store_comparison.csv")}
+        self.assertEqual(by_store["龙玥城店"]["store_segment"], "对比不足")
+        self.assertEqual(by_store["龙玥城店"]["wow_net_revenue_pct"], "")
+        self.assertIn("COVERAGE_WINDOW_MISSING", [notice["code"] for notice in summary["notices"]])
+        self.assertEqual(summary["meta"]["coverage"], bundle["coverage"])

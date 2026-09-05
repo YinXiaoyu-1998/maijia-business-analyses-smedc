@@ -41,6 +41,7 @@ class ProfileMonthlyDataTests(unittest.TestCase):
         output_dir, summary = self.run_profile()
 
         self.assertEqual(summary["meta"]["report_grain"], "month")
+        self.assertEqual(summary["meta"]["coverage"], json.loads(FIXTURE.read_text(encoding="utf-8"))["coverage"])
         self.assertIn("OPTIONAL_MODULE_MISSING", [notice["code"] for notice in summary["notices"]])
 
         comparisons = read_csv(output_dir / "monthly_store_comparison.csv")
