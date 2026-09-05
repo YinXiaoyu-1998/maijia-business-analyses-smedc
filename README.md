@@ -6,6 +6,17 @@ This repository is an Enterprise Hub-backed derivative design informed by the or
 
 This skill uses `enterprise-hub-mcp-launcher@0.2.6` and the authenticated Enterprise Hub MCP tools for structured dataset registry, coverage, and query access.
 
+## Installation
+
+Prerequisite: install and use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. This reporting skill requires `enterprise-hub-mcp-launcher@0.2.6`, but launcher installation and authentication are delegated to the prerequisite skill.
+
+Install this reporting skill in the cross-runtime user skills directory:
+
+```bash
+mkdir -p ~/.agents/skills
+git clone https://github.com/YinXiaoyu-1998/maijia-business-analyses-smedc.git ~/.agents/skills/maijia-business-analyses-smedc
+```
+
 ## Scope
 
 Included:
@@ -25,7 +36,7 @@ Excluded by design:
 
 ## Agent Workflow
 
-1. Install or update `enterprise-hub-mcp-launcher@0.2.6` and complete login through the official launcher-supported flow.
+1. Use the prerequisite `enterprise-hub-mcp-skill` for current-user launcher install/update/login; continue only after the authenticated Enterprise Hub MCP session is available.
 2. Save the `list_structured_datasets` envelope as `registry_response.json`.
 3. Save `describe_structured_dataset_coverage` envelopes for `business`, `dishes`, and `dish_catalog` as `coverage_business.json`, `coverage_dishes.json`, and `coverage_dish_catalog.json`.
 4. Run `python3 scripts/build_query_plan.py` for `diagnosis`, `weekly`, or `monthly`.

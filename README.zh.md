@@ -6,6 +6,17 @@
 
 本 skill 使用 `enterprise-hub-mcp-launcher@0.2.6`，并通过用户已认证的 Enterprise Hub MCP tools 获取结构化 dataset registry、coverage 和 query 结果。
 
+## 安装
+
+前置条件：先安装并使用 [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) 配置、更新并登录官方 current-user Enterprise Hub MCP launcher。本 reporting skill 要求 `enterprise-hub-mcp-launcher@0.2.6`，但 launcher 安装和认证流程由前置 skill 负责。
+
+将本 reporting skill 安装到跨运行时 user skills 目录：
+
+```bash
+mkdir -p ~/.agents/skills
+git clone https://github.com/YinXiaoyu-1998/maijia-business-analyses-smedc.git ~/.agents/skills/maijia-business-analyses-smedc
+```
+
 ## 范围
 
 支持范围：
@@ -25,7 +36,7 @@
 
 ## Agent Workflow
 
-1. 安装或更新 `enterprise-hub-mcp-launcher@0.2.6`，并通过官方 launcher 支持的流程完成登录。
+1. 使用前置 `enterprise-hub-mcp-skill` 完成 current-user launcher 安装、更新和登录；确认已认证的 Enterprise Hub MCP session 可用后再继续。
 2. 将 `list_structured_datasets` envelope 保存为 `registry_response.json`。
 3. 对 `business`、`dishes`、`dish_catalog` 依次调用 `describe_structured_dataset_coverage`，保存为 `coverage_business.json`、`coverage_dishes.json`、`coverage_dish_catalog.json`。
 4. 使用 `python3 scripts/build_query_plan.py` 生成 `diagnosis`、`weekly` 或 `monthly` 的 query manifest。

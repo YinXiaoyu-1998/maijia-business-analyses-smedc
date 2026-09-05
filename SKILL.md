@@ -7,6 +7,8 @@ description: Use when generating Maijia diagnosis, weekly, or monthly operating 
 
 Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meeting reports from Enterprise Hub structured data. The employee-owned agent does the MCP calls; local scripts only validate saved MCP envelopes, derive facts, and render self-contained HTML.
 
+**REQUIRED SUB-SKILL:** Use enterprise-hub-mcp for official current-user Enterprise Hub install, update, repair, and login. This reporting skill depends on `enterprise-hub-mcp-launcher@0.2.6`, but does not duplicate launcher installation mechanics or authentication steps.
+
 ## Boundaries
 
 - Use only `enterprise-hub-mcp-launcher@0.2.6` and an authenticated `enterprise-hub-mcp` session for remote data.
@@ -19,13 +21,7 @@ Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meetin
 
 ## Workflow
 
-1. Install or update the official launcher if needed:
-
-   ```bash
-   npm install -g enterprise-hub-mcp-launcher@0.2.6
-   ```
-
-   Then complete Enterprise Hub login through the launcher-supported flow. Continue only after MCP tools are available in the user's authenticated session.
+1. Use `enterprise-hub-mcp` to install, update, repair, or log in to the official current-user Enterprise Hub MCP launcher. Continue only after the authenticated MCP session exposes the business tools. Record in the handoff that this run used the required `enterprise-hub-mcp-launcher@0.2.6` dependency.
 
 2. Create a run directory, for example `runs/2026-09-05-weekly/`, with durable evidence paths:
 
