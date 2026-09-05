@@ -1,0 +1,191 @@
+import json
+import re
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = ROOT / "tests" / "fixtures"
+
+
+def run_script(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, *args],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+
+def assert_self_contained(testcase: unittest.TestCase, html: str) -> None:
+    testcase.assertNotRegex(html, r"<script[^>]+src=", "report must not load external scripts")
+    testcase.assertNotRegex(html, r"<link[^>]+stylesheet", "report must not load external stylesheets")
+    testcase.assertNotRegex(html, r"https?://", "report must not depend on network URLs")
+    testcase.assertIn("<style>", html)
+    testcase.assertIn("<script>", html)
+    testcase.assertIn('type="application/json"', html)
+    testcase.assertRegex(html, r"<table[^>]+aria-label=")
+    testcase.assertIn("<caption>", html)
+    testcase.assertIn('scope="col"', html)
+    payload_match = re.search(r'<script type="application/json" id="report-data">(.*?)</script>', html, re.DOTALL)
+    testcase.assertIsNotNone(payload_match, "report must embed its source payload as JSON")
+    json.loads(payload_match.group(1))
+    testcase.assertNotIn(str(ROOT), html, "report must not embed workspace-local paths")
+
+
+class ReportHtmlTests(unittest.TestCase):
+    maxDiff = None
+
+    def render_from_profile(self, profile_script: str, render_script: str, fixture_name: str, summary_name: str) -> tuple[Path, str, dict]:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        report_path = output_dir / "report.html"
+
+        profile = run_script(
+            f"scripts/{profile_script}",
+            "--bundle",
+            str(FIXTURES / fixture_name),
+            "--output-dir",
+            str(output_dir),
+        )
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+
+        rendered = run_script(
+            f"scripts/{render_script}",
+            "--input-dir",
+            str(output_dir),
+            "--report",
+            str(report_path),
+        )
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        result = json.loads(rendered.stdout)
+        self.assertEqual(Path(result["artifacts"]["report"]), report_path)
+        return report_path, report_path.read_text(encoding="utf-8"), json.loads((output_dir / summary_name).read_text(encoding="utf-8"))
+
+    def test_diagnosis_report_renders_source_facts_tables_and_notices(self) -> None:
+        _, html, summary = self.render_from_profile(
+            "profile_business_data.py",
+            "generate_business_report_html.py",
+            "diagnosis_bundle.json",
+            "analysis_summary.json",
+        )
+
+        assert_self_contained(self, html)
+        self.assertIn("麦家小馆经营诊断", html)
+        self.assertIn("2026-07-01", html)
+        self.assertIn("2026-07-07", html)
+        self.assertIn("business.2026-09-04.v2", html)
+        self.assertIn("doc_diagnosis_business", html)
+        self.assertIn("OPTIONAL_MODULE_MISSING", html)
+        self.assertIn("核心 KPI", html)
+        self.assertIn("门店对比", html)
+        self.assertIn("渠道 / 平台", html)
+        self.assertIn("会员结构", html)
+        self.assertIn("支付 / 来源", html)
+        self.assertIn("餐段效率", html)
+        self.assertIn("荣京道店", html)
+        self.assertIn("龙玥城店", html)
+        self.assertIn("店内销售", html)
+        self.assertIn("扫码支付", html)
+        self.assertIn("午餐", html)
+        self.assertIn("8000", html)
+        self.assertEqual(summary["overall_kpis"]["net_revenue"], 8000.0)
+
+    def test_weekly_report_renders_comparison_trend_mix_and_product_panels(self) -> None:
+        _, html, summary = self.render_from_profile(
+            "profile_weekly_data.py",
+            "generate_weekly_report_html.py",
+            "weekly_bundle.json",
+            "weekly_meeting_summary.json",
+        )
+
+        assert_self_contained(self, html)
+        self.assertIn("麦家小馆周会经营报告", html)
+        self.assertIn("2026-07-20", html)
+        self.assertIn("2026-07-26", html)
+        self.assertIn("本期 / 上期 / 同比", html)
+        self.assertIn("趋势", html)
+        self.assertIn("门店象限 / 排名", html)
+        self.assertIn("渠道结构", html)
+        self.assertIn("餐段 / 时段", html)
+        self.assertIn("档口销售占比", html)
+        self.assertIn("产品每万收入销量", html)
+        self.assertIn("产品每万流水销量", html)
+        self.assertIn("牛肉面", html)
+        self.assertIn("面档", html)
+        self.assertIn("明星门店", html)
+        self.assertIn("OPTIONAL_MODULE_MISSING", html)
+        self.assertEqual(summary["meta"]["report_grain"], "week")
+
+    def test_monthly_report_renders_comparison_trend_mix_and_product_panels_without_removed_scope(self) -> None:
+        _, html, summary = self.render_from_profile(
+            "profile_monthly_data.py",
+            "generate_monthly_report_html.py",
+            "monthly_bundle.json",
+            "monthly_meeting_summary.json",
+        )
+
+        assert_self_contained(self, html)
+        self.assertIn("麦家小馆月会经营报告", html)
+        self.assertIn("2026-07-01", html)
+        self.assertIn("2026-07-31", html)
+        self.assertIn("2025-07-01", html)
+        self.assertIn("本期 / 上期 / 同比", html)
+        self.assertIn("2025-06", html)
+        self.assertIn("2026-07", html)
+        self.assertIn("档口销售占比", html)
+        self.assertIn("产品每万收入销量", html)
+        self.assertIn("产品每万流水销量", html)
+        forbidden = re.compile("|".join(["pro" + "fit", "monthly_" + "pro" + "fit", "利" + "润"]), re.IGNORECASE)
+        self.assertNotRegex(html, forbidden)
+        self.assertEqual(summary["meta"]["report_grain"], "month")
+
+    def test_weekly_report_marks_stall_and_product_panels_partial_when_data_is_missing(self) -> None:
+        bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["dishes_current_product_totals"]["rows"] = []
+        bundle["resultsByJobId"]["dish_catalog_current_snapshot"]["rows"] = []
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "bundle.json"
+        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        report_path = output_dir / "partial.html"
+        rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        html = report_path.read_text(encoding="utf-8")
+
+        assert_self_contained(self, html)
+        self.assertIn("部分数据不可用", html)
+        self.assertIn("缺少菜品主题数据或菜品库", html)
+        self.assertIn("档口销售占比", html)
+        self.assertIn("产品每万收入销量", html)
+
+    def test_runners_profile_render_and_print_final_json(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        report_path = output_dir / "weekly.html"
+
+        completed = run_script(
+            "scripts/run_weekly_report.py",
+            "--bundle",
+            str(FIXTURES / "weekly_bundle.json"),
+            "--output-dir",
+            str(output_dir),
+            "--report",
+            str(report_path),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(Path(result["artifacts"]["report"]), report_path)
+        self.assertEqual(Path(result["artifacts"]["summary"]), output_dir / "weekly_meeting_summary.json")
+        self.assertIn("weekly_store_comparison.csv", result["artifacts"]["facts"])
+        self.assertIn("OPTIONAL_MODULE_MISSING", [notice["code"] for notice in result["notices"]])
+        self.assertTrue(report_path.exists())
