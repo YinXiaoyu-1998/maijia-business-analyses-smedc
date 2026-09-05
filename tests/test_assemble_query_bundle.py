@@ -144,6 +144,47 @@ class AssembleQueryBundleTests(unittest.TestCase):
                 )
             return completed, json.loads(output.read_text(encoding="utf-8"))
 
+    def run_bundle_text(
+        self,
+        *,
+        manifest_text: str,
+        responses: dict[str, str],
+        expect_error: bool = False,
+    ) -> tuple[subprocess.CompletedProcess[str], str | None]:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            manifest_path = tmp_path / "manifest.json"
+            responses_dir = tmp_path / "responses"
+            output = tmp_path / "bundle.json"
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+            for relative_path, payload in responses.items():
+                path = responses_dir / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(payload, encoding="utf-8")
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--manifest",
+                    str(manifest_path),
+                    "--responses-dir",
+                    str(responses_dir),
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            if expect_error:
+                return completed, None
+            if completed.returncode != 0:
+                self.fail(
+                    f"assemble_query_bundle failed with {completed.returncode}\n"
+                    f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+                )
+            return completed, output.read_text(encoding="utf-8")
+
     def aggregate_page(self, *, rows: list[dict], next_cursor: str | None = None) -> dict:
         return {
             "dataset": "business",
@@ -196,6 +237,25 @@ class AssembleQueryBundleTests(unittest.TestCase):
         self.assertEqual(
             bundle["resultsByJobId"]["dish_catalog_current_snapshot"]["query"],
             self.manifest()["jobs"][1]["input"],
+        )
+
+    def test_successful_job_assembles_when_module_has_no_partial_policy(self) -> None:
+        manifest = self.manifest()
+        manifest["jobs"][0]["module"] = "diagnosisModuleWithoutPolicy"
+
+        _, bundle = self.run_bundle(
+            manifest=manifest,
+            responses={
+                "query-results/business_current_store_totals.json": self.aggregate_page(
+                    rows=[{"store_name": "荣京道店", "order_revenue": "1000.50"}],
+                ),
+                "query-results/dish_catalog_current_snapshot.json": self.detail_page(rows=[]),
+            },
+        )
+
+        self.assertEqual(
+            bundle["resultsByJobId"]["business_current_store_totals"]["module"],
+            "diagnosisModuleWithoutPolicy",
         )
 
     def test_concatenates_multiple_cursor_pages_in_order(self) -> None:
@@ -252,6 +312,30 @@ class AssembleQueryBundleTests(unittest.TestCase):
             bundle["notices"],
         )
 
+    def test_missing_response_for_module_without_policy_uses_default_notice(self) -> None:
+        manifest = self.manifest()
+        manifest["jobs"][1]["module"] = "diagnosisModuleWithoutPolicy"
+
+        _, bundle = self.run_bundle(
+            manifest=manifest,
+            responses={
+                "query-results/business_current_store_totals.json": self.aggregate_page(rows=[]),
+            },
+        )
+
+        self.assertNotIn("dish_catalog_current_snapshot", bundle["resultsByJobId"])
+        self.assertIn(
+            {
+                "code": "QUERY_RESPONSE_MISSING",
+                "dataset": "dish_catalog",
+                "window": "current",
+                "module": "diagnosisModuleWithoutPolicy",
+                "jobId": "dish_catalog_current_snapshot",
+                "outputFile": "query-results/dish_catalog_current_snapshot.json",
+            },
+            bundle["notices"],
+        )
+
     def test_api_or_mcp_error_envelope_adds_module_notice(self) -> None:
         _, bundle = self.run_bundle(
             responses={
@@ -300,6 +384,87 @@ class AssembleQueryBundleTests(unittest.TestCase):
             bundle["notices"],
         )
 
+    def test_nested_wrapped_error_after_unwrap_adds_module_notice(self) -> None:
+        _, bundle = self.run_bundle(
+            responses={
+                "query-results/business_current_store_totals.json": self.aggregate_page(rows=[]),
+                "query-results/dish_catalog_current_snapshot.json": {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "isError": False,
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {"error": {"code": "FORBIDDEN", "message": "forbidden"}},
+                                    ensure_ascii=False,
+                                ),
+                            }
+                        ],
+                    },
+                },
+            }
+        )
+
+        self.assertNotIn("dish_catalog_current_snapshot", bundle["resultsByJobId"])
+        self.assertIn(
+            {
+                "code": "QUERY_RESPONSE_ERROR",
+                "dataset": "dish_catalog",
+                "window": "current",
+                "module": "stallAttribution",
+                "jobId": "dish_catalog_current_snapshot",
+                "outputFile": "query-results/dish_catalog_current_snapshot.json",
+            },
+            bundle["notices"],
+        )
+
+    def test_ambiguous_success_wrapper_payloads_fail_closed(self) -> None:
+        completed, _ = self.run_bundle(
+            responses={
+                "query-results/business_current_store_totals.json": {
+                    "payload": self.aggregate_page(rows=[]),
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(
+                                self.aggregate_page(
+                                    rows=[{"store_name": "荣京道店", "order_revenue": "1000.50"}],
+                                ),
+                                ensure_ascii=False,
+                            ),
+                        }
+                    ],
+                },
+                "query-results/dish_catalog_current_snapshot.json": self.detail_page(rows=[]),
+            },
+            expect_error=True,
+        )
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("ambiguous saved MCP wrapper", completed.stderr)
+
+    def test_duplicate_success_wrapper_payload_slots_fail_closed(self) -> None:
+        page = self.aggregate_page(rows=[])
+        completed, _ = self.run_bundle(
+            responses={
+                "query-results/business_current_store_totals.json": {
+                    "payload": page,
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(page, ensure_ascii=False),
+                        }
+                    ],
+                },
+                "query-results/dish_catalog_current_snapshot.json": self.detail_page(rows=[]),
+            },
+            expect_error=True,
+        )
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("ambiguous saved MCP wrapper", completed.stderr)
+
     def test_dataset_registry_or_mode_mismatch_fails_closed(self) -> None:
         cases = [
             ("dataset", {"dataset": "dishes"}),
@@ -340,6 +505,150 @@ class AssembleQueryBundleTests(unittest.TestCase):
 
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("duplicate group row", completed.stderr)
+
+    def test_null_group_key_is_distinct_from_missing_group_key(self) -> None:
+        _, bundle = self.run_bundle(
+            responses={
+                "query-results/business_current_store_totals.json": [
+                    self.aggregate_page(
+                        rows=[{"store_name": None, "order_revenue": "1000.50"}],
+                        next_cursor="cursor_page_2",
+                    ),
+                    self.aggregate_page(
+                        rows=[{"store_name": "荣京道店", "order_revenue": "1200.00"}],
+                        next_cursor=None,
+                    ),
+                ],
+                "query-results/dish_catalog_current_snapshot.json": self.detail_page(rows=[]),
+            }
+        )
+
+        self.assertEqual(len(bundle["resultsByJobId"]["business_current_store_totals"]["rows"]), 2)
+
+    def test_missing_group_key_fails_closed(self) -> None:
+        completed, _ = self.run_bundle(
+            responses={
+                "query-results/business_current_store_totals.json": self.aggregate_page(
+                    rows=[{"order_revenue": "1000.50"}],
+                ),
+                "query-results/dish_catalog_current_snapshot.json": self.detail_page(rows=[]),
+            },
+            expect_error=True,
+        )
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("missing groupBy field store_name", completed.stderr)
+
+    def test_bool_and_integer_group_keys_do_not_collapse(self) -> None:
+        manifest = self.manifest()
+        manifest["jobs"][0]["input"]["groupBy"] = ["store_name", "is_member"]
+        _, bundle = self.run_bundle(
+            manifest=manifest,
+            responses={
+                "query-results/business_current_store_totals.json": [
+                    self.aggregate_page(
+                        rows=[{"store_name": "荣京道店", "is_member": True, "order_revenue": "1000.50"}],
+                        next_cursor="cursor_page_2",
+                    ),
+                    self.aggregate_page(
+                        rows=[{"store_name": "荣京道店", "is_member": 1, "order_revenue": "1200.00"}],
+                        next_cursor=None,
+                    ),
+                ],
+                "query-results/dish_catalog_current_snapshot.json": self.detail_page(rows=[]),
+            },
+        )
+
+        self.assertEqual(len(bundle["resultsByJobId"]["business_current_store_totals"]["rows"]), 2)
+
+    def test_integer_and_decimal_group_keys_do_not_collapse(self) -> None:
+        manifest = self.manifest()
+        manifest["jobs"][0]["input"]["groupBy"] = ["store_name", "party_size"]
+        manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2)
+        response_text = """
+[
+  {
+    "dataset": "business",
+    "registryVersion": "business.2026-09-04.v2",
+    "mode": "aggregate",
+    "rows": [{"store_name": "荣京道店", "party_size": 1, "order_revenue": "1000.50"}],
+    "nextCursor": "cursor_page_2"
+  },
+  {
+    "dataset": "business",
+    "registryVersion": "business.2026-09-04.v2",
+    "mode": "aggregate",
+    "rows": [{"store_name": "荣京道店", "party_size": 1.0, "order_revenue": "1200.00"}],
+    "nextCursor": null
+  }
+]
+""".strip()
+
+        _, output_text = self.run_bundle_text(
+            manifest_text=manifest_text,
+            responses={
+                "query-results/business_current_store_totals.json": response_text,
+                "query-results/dish_catalog_current_snapshot.json": json.dumps(self.detail_page(rows=[])),
+            },
+        )
+
+        self.assertIn('"party_size": 1,', output_text)
+        self.assertIn('"party_size": 1.0,', output_text)
+
+    def test_high_precision_and_scientific_json_numbers_are_preserved_as_numbers(self) -> None:
+        manifest = self.manifest()
+        manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2)
+        response_text = """
+{
+  "dataset": "business",
+  "registryVersion": "business.2026-09-04.v2",
+  "mode": "aggregate",
+  "rows": [
+    {
+      "store_name": "荣京道店",
+      "order_revenue": 12345678901234567890.123456789,
+      "weighted_open_rate": 1.234567890123456789e-7
+    }
+  ],
+  "nextCursor": null
+}
+""".strip()
+
+        _, output_text = self.run_bundle_text(
+            manifest_text=manifest_text,
+            responses={
+                "query-results/business_current_store_totals.json": response_text,
+                "query-results/dish_catalog_current_snapshot.json": json.dumps(self.detail_page(rows=[])),
+            },
+        )
+
+        self.assertIn('"order_revenue": 12345678901234567890.123456789', output_text)
+        self.assertIn('"weighted_open_rate": 1.234567890123456789E-7', output_text)
+        self.assertNotIn('"order_revenue": "12345678901234567890.123456789"', output_text)
+
+    def test_nan_and_infinity_numbers_fail_closed(self) -> None:
+        manifest_text = json.dumps(self.manifest(), ensure_ascii=False, indent=2)
+        response_text = """
+{
+  "dataset": "business",
+  "registryVersion": "business.2026-09-04.v2",
+  "mode": "aggregate",
+  "rows": [{"store_name": "荣京道店", "order_revenue": NaN}],
+  "nextCursor": null
+}
+""".strip()
+
+        completed, _ = self.run_bundle_text(
+            manifest_text=manifest_text,
+            responses={
+                "query-results/business_current_store_totals.json": response_text,
+                "query-results/dish_catalog_current_snapshot.json": json.dumps(self.detail_page(rows=[])),
+            },
+            expect_error=True,
+        )
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("invalid JSON number", completed.stderr)
 
     def test_response_files_not_named_by_manifest_jobs_fail_closed(self) -> None:
         completed, _ = self.run_bundle(

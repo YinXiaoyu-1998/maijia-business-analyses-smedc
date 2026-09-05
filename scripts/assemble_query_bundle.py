@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from decimal import Decimal
+from json.encoder import encode_basestring
 from pathlib import Path
 from typing import Any
 
@@ -21,11 +23,68 @@ class BundleError(ValueError):
 def load_json(path: Path, description: str) -> Any:
     try:
         with path.open(encoding="utf-8") as handle:
-            return json.load(handle)
+            return json.load(handle, parse_float=Decimal, parse_constant=reject_json_constant)
     except FileNotFoundError as exc:
         raise BundleError(f"{description} not found: {path}") from exc
     except json.JSONDecodeError as exc:
         raise BundleError(f"{description} is not valid JSON: {path}: {exc}") from exc
+
+
+def reject_json_constant(value: str) -> None:
+    raise BundleError(f"invalid JSON number: {value}")
+
+
+def dump_json_exact(value: Any, *, indent: int | None = 2) -> str:
+    return encode_json_value(value, indent=indent, level=0)
+
+
+def encode_json_value(value: Any, *, indent: int | None, level: int) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise BundleError(f"invalid JSON number: {value}")
+        return str(value)
+    if isinstance(value, float):
+        raise BundleError("invalid in-memory float; response numbers must be parsed exactly")
+    if isinstance(value, str):
+        return encode_basestring(value)
+    if isinstance(value, list):
+        if not value:
+            return "[]"
+        if indent is None:
+            return "[" + ",".join(encode_json_value(item, indent=indent, level=level) for item in value) + "]"
+        child_indent = " " * (indent * (level + 1))
+        closing_indent = " " * (indent * level)
+        items = [
+            child_indent + encode_json_value(item, indent=indent, level=level + 1)
+            for item in value
+        ]
+        return "[\n" + ",\n".join(items) + "\n" + closing_indent + "]"
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        for key in value:
+            if not isinstance(key, str):
+                raise BundleError("JSON object keys must be strings")
+        ordered_keys = sorted(value)
+        if indent is None:
+            return "{" + ",".join(
+                f"{encode_basestring(key)}:{encode_json_value(value[key], indent=indent, level=level)}"
+                for key in ordered_keys
+            ) + "}"
+        child_indent = " " * (indent * (level + 1))
+        closing_indent = " " * (indent * level)
+        items = [
+            f"{child_indent}{encode_basestring(key)}: {encode_json_value(value[key], indent=indent, level=level + 1)}"
+            for key in ordered_keys
+        ]
+        return "{\n" + ",\n".join(items) + "\n" + closing_indent + "}"
+    raise BundleError(f"unsupported JSON value type: {type(value).__name__}")
 
 
 def require_object(value: Any, description: str) -> dict[str, Any]:
@@ -141,9 +200,21 @@ def unwrap_content_text(value: dict[str, Any]) -> Any | None:
     if not isinstance(item, dict) or item.get("type") != "text" or not isinstance(item.get("text"), str):
         return None
     try:
-        return json.loads(item["text"])
+        return json.loads(item["text"], parse_float=Decimal, parse_constant=reject_json_constant)
     except json.JSONDecodeError as exc:
         raise BundleError(f"MCP content text is not valid JSON: {exc}") from exc
+
+
+def wrapper_payload_candidates(value: dict[str, Any]) -> list[Any]:
+    candidates: list[Any] = []
+    if "result" in value and isinstance(value["result"], dict):
+        candidates.append(unwrap_success_envelope(value["result"]))
+    if "payload" in value:
+        candidates.append(unwrap_success_envelope(value["payload"]))
+    content_payload = unwrap_content_text(value)
+    if content_payload is not None:
+        candidates.append(unwrap_success_envelope(content_payload))
+    return candidates
 
 
 def unwrap_success_envelope(value: Any) -> Any:
@@ -151,20 +222,11 @@ def unwrap_success_envelope(value: Any) -> Any:
         return [unwrap_success_envelope(item) for item in value]
     if not isinstance(value, dict):
         return value
-    result = value.get("result")
-    if isinstance(result, dict):
-        if "payload" in result:
-            return unwrap_success_envelope(result["payload"])
-        content_payload = unwrap_content_text(result)
-        if content_payload is not None:
-            return unwrap_success_envelope(content_payload)
-        if result.get("isError") is False and "content" not in result:
-            return result
-    if "payload" in value and not {"dataset", "registryVersion", "mode", "rows", "nextCursor"}.issubset(value):
-        return unwrap_success_envelope(value["payload"])
-    content_payload = unwrap_content_text(value)
-    if content_payload is not None:
-        return unwrap_success_envelope(content_payload)
+    candidates = wrapper_payload_candidates(value)
+    if candidates:
+        if len(candidates) > 1:
+            raise BundleError("ambiguous saved MCP wrapper exposes multiple payload candidates")
+        return candidates[0]
     return value
 
 
@@ -200,11 +262,6 @@ def make_notice(code: str, job: dict[str, Any], manifest: dict[str, Any]) -> dic
         "jobId": job["id"],
         "outputFile": job["outputFile"],
     }
-
-
-def module_allows_partial(config: dict[str, Any], module: str) -> bool:
-    module_config = config["reportModules"].get(module)
-    return isinstance(module_config, dict) and isinstance(module_config.get("partialPolicy"), str)
 
 
 def as_pages(value: Any, job: dict[str, Any]) -> list[dict[str, Any]]:
@@ -250,6 +307,22 @@ def validate_page(page: dict[str, Any], job: dict[str, Any], page_index: int, pa
     return page["rows"]
 
 
+def typed_group_value(value: Any, job: dict[str, Any], field: str) -> tuple[str, str]:
+    if value is None:
+        return ("null", "null")
+    if isinstance(value, bool):
+        return ("boolean", "true" if value else "false")
+    if isinstance(value, int):
+        return ("integer", str(value))
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise BundleError(f"job {job['id']} invalid groupBy number for field {field}")
+        return ("number", str(value))
+    if isinstance(value, str):
+        return ("string", value)
+    raise BundleError(f"job {job['id']} groupBy field {field} has unsupported value type {type(value).__name__}")
+
+
 def validate_duplicate_group_rows(job: dict[str, Any], page_rows: list[list[dict[str, Any]]]) -> None:
     query = job["input"]
     if expected_mode(query) != "aggregate":
@@ -260,7 +333,10 @@ def validate_duplicate_group_rows(job: dict[str, Any], page_rows: list[list[dict
     seen: dict[tuple[Any, ...], int] = {}
     for page_index, rows in enumerate(page_rows):
         for row in rows:
-            key = tuple(row.get(field) for field in group_by)
+            for field in group_by:
+                if field not in row:
+                    raise BundleError(f"job {job['id']} missing groupBy field {field}")
+            key = tuple(typed_group_value(row[field], job, field) for field in group_by)
             if key in seen:
                 raise BundleError(
                     f"job {job['id']} duplicate group row across pages for fields {group_by}"
@@ -269,8 +345,7 @@ def validate_duplicate_group_rows(job: dict[str, Any], page_rows: list[list[dict
 
 
 def assemble_job_result(job: dict[str, Any], response_data: Any) -> dict[str, Any]:
-    payload = unwrap_success_envelope(response_data)
-    pages = as_pages(payload, job)
+    pages = as_pages(response_data, job)
     all_rows: list[dict[str, Any]] = []
     page_rows: list[list[dict[str, Any]]] = []
     page_summaries: list[dict[str, Any]] = []
@@ -333,8 +408,6 @@ def assemble_bundle(manifest: dict[str, Any], responses_dir: Path, config: dict[
     notices: list[dict[str, Any]] = list(manifest["notices"])
     results_by_job_id: dict[str, Any] = {}
     for job in jobs:
-        if not module_allows_partial(config, job["module"]):
-            raise BundleError(f"job {job['id']} module does not permit partial output: {job['module']}")
         response_path = expected_paths[job["outputFile"]]
         if not response_path.exists():
             notices.append(make_notice("QUERY_RESPONSE_MISSING", job, manifest))
@@ -343,7 +416,11 @@ def assemble_bundle(manifest: dict[str, Any], responses_dir: Path, config: dict[
         if is_error_envelope(response_data):
             notices.append(make_notice("QUERY_RESPONSE_ERROR", job, manifest))
             continue
-        results_by_job_id[job["id"]] = assemble_job_result(job, response_data)
+        payload = unwrap_success_envelope(response_data)
+        if is_error_envelope(payload):
+            notices.append(make_notice("QUERY_RESPONSE_ERROR", job, manifest))
+            continue
+        results_by_job_id[job["id"]] = assemble_job_result(job, payload)
 
     jobs_metadata = [
         {
@@ -393,10 +470,7 @@ def main(argv: list[str]) -> int:
         manifest = require_object(load_json(args.manifest, "query manifest"), "query manifest")
         bundle = assemble_bundle(manifest, args.responses_dir, config)
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
-            json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        args.output.write_text(dump_json_exact(bundle, indent=2) + "\n", encoding="utf-8")
     except BundleError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
