@@ -36,6 +36,10 @@ def assert_self_contained(testcase: unittest.TestCase, html: str) -> None:
     testcase.assertNotIn(str(ROOT), html, "report must not embed workspace-local paths")
 
 
+def strip_embedded_scripts(html: str) -> str:
+    return re.sub(r"<script\b.*?</script>", "", html, flags=re.IGNORECASE | re.DOTALL)
+
+
 class ReportHtmlTests(unittest.TestCase):
     maxDiff = None
 
@@ -166,6 +170,67 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("缺少菜品主题数据或菜品库", html)
         self.assertIn("档口销售占比", html)
         self.assertIn("产品每万收入销量", html)
+
+    def test_weekly_report_renders_coverage_window_details_and_notice_gaps_visibly(self) -> None:
+        bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
+        bundle["coverage"] = {
+            "business": {
+                "dataset": "business",
+                "registryVersion": "business.2026-09-04.v2",
+                "metadataPolicy": "window",
+                "readable": True,
+                "sources": [],
+                "windows": {
+                    "trend": {
+                        "requested": {"start": "2026-04-06", "end": "2026-07-26"},
+                        "hasReadableOverlap": True,
+                        "observed": [
+                            {
+                                "startDate": "2026-07-01",
+                                "endDate": "2026-07-26",
+                                "rowCount": 42,
+                                "sourceDocumentId": "doc_visible_trend",
+                                "importBatchId": "imp_visible_trend",
+                            }
+                        ],
+                        "isFullyCovered": False,
+                        "gaps": [{"startDate": "2026-04-06", "endDate": "2026-06-30"}],
+                    }
+                },
+            }
+        }
+        bundle["notices"].append(
+            {
+                "code": "COVERAGE_WINDOW_PARTIAL",
+                "dataset": "business",
+                "window": "trend",
+                "module": "weeklyTrend",
+                "gaps": [{"startDate": "2026-04-06", "endDate": "2026-06-30"}],
+            }
+        )
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "bundle.json"
+        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        report_path = output_dir / "coverage.html"
+        rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+
+        self.assertIn("覆盖明细", visible_html)
+        self.assertIn("business", visible_html)
+        self.assertIn("trend", visible_html)
+        self.assertIn("2026-04-06 至 2026-07-26", visible_html)
+        self.assertIn("2026-07-01 至 2026-07-26", visible_html)
+        self.assertIn("2026-04-06 至 2026-06-30", visible_html)
+        self.assertIn("42", visible_html)
+        self.assertIn("doc_visible_trend", visible_html)
+        self.assertIn("imp_visible_trend", visible_html)
+        self.assertIn("COVERAGE_WINDOW_PARTIAL", visible_html)
 
     def test_runners_profile_render_and_print_final_json(self) -> None:
         tmp = tempfile.TemporaryDirectory()

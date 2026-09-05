@@ -140,6 +140,14 @@ DISPLAY_LABELS = {
     "units_per_10k": "每万收入销量",
     "units_per_10k_gross_sales": "每万流水销量",
     "order_revenue": "实收收入",
+    "dataset": "数据集",
+    "window": "窗口",
+    "requested": "请求范围",
+    "observed": "可见覆盖",
+    "gaps": "缺口",
+    "row_count": "行数",
+    "sourceDocumentIds": "来源文档",
+    "importBatchIds": "导入批次",
 }
 
 
@@ -254,6 +262,9 @@ def notices_html(notices: list[dict[str, Any]], extra_messages: list[str] | None
         title = str(notice.get("code") or "DATA_NOTICE")
         detail_parts = [str(notice.get(key)) for key in ("dataset", "window", "module") if notice.get(key)]
         detail = " / ".join(detail_parts) if detail_parts else "来源数据边界提示"
+        gap_text = ranges_text(notice.get("gaps", []))
+        if gap_text:
+            detail = f"{detail}；缺口：{gap_text}"
         blocks.append(f'<div class="notice"><strong>{escape(title)}</strong><p>{escape(detail)}</p></div>')
     for message in extra_messages or []:
         blocks.append(f'<div class="notice"><strong>部分数据不可用</strong><p>{escape(message)}</p></div>')
@@ -272,6 +283,75 @@ def windows_html(windows: dict[str, Any]) -> str:
     return '<div class="meta-list">' + "".join(items) + "</div>"
 
 
+def range_text(value: dict[str, Any] | None) -> str:
+    if not isinstance(value, dict):
+        return ""
+    start = value.get("start") or value.get("startDate") or value.get("snapshotDate")
+    end = value.get("end") or value.get("endDate") or value.get("snapshotDate")
+    if start and end and start != end:
+        return f"{start} 至 {end}"
+    return str(start or end or "")
+
+
+def ranges_text(values: Any) -> str:
+    if not isinstance(values, list):
+        return ""
+    ranges = [range_text(value) for value in values if isinstance(value, dict)]
+    return "；".join(item for item in ranges if item)
+
+
+def compact_ids(values: Iterable[Any]) -> str:
+    ids = sorted({str(value) for value in values if value not in {None, ""}})
+    return "；".join(ids)
+
+
+def coverage_rows(coverage: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not isinstance(coverage, dict):
+        return rows
+    for dataset_name in sorted(coverage):
+        dataset = coverage.get(dataset_name)
+        if not isinstance(dataset, dict):
+            continue
+        windows = dataset.get("windows")
+        if isinstance(windows, dict) and windows:
+            for window_name in sorted(windows):
+                window = windows.get(window_name)
+                if not isinstance(window, dict):
+                    continue
+                observed = window.get("observed", [])
+                observed_rows = [item for item in observed if isinstance(item, dict)] if isinstance(observed, list) else []
+                row_count = sum(int(item.get("rowCount") or 0) for item in observed_rows)
+                rows.append(
+                    {
+                        "dataset": dataset.get("dataset") or dataset_name,
+                        "window": window_name,
+                        "requested": range_text(window.get("requested")),
+                        "observed": ranges_text(observed_rows),
+                        "gaps": ranges_text(window.get("gaps", [])),
+                        "row_count": row_count or "",
+                        "sourceDocumentIds": compact_ids(item.get("sourceDocumentId") for item in observed_rows),
+                        "importBatchIds": compact_ids(item.get("importBatchId") for item in observed_rows),
+                    }
+                )
+            continue
+        source_rows = [item for item in dataset.get("sources", []) if isinstance(item, dict)]
+        for source in sorted(source_rows, key=lambda item: (str(item.get("startDate") or item.get("snapshotDate") or ""), str(item.get("endDate") or ""))):
+            rows.append(
+                {
+                    "dataset": dataset.get("dataset") or dataset_name,
+                    "window": "source",
+                    "requested": "",
+                    "observed": range_text(source),
+                    "gaps": "",
+                    "row_count": source.get("rowCount") or "",
+                    "sourceDocumentIds": str(source.get("sourceDocumentId") or ""),
+                    "importBatchIds": str(source.get("importBatchId") or ""),
+                }
+            )
+    return rows
+
+
 def source_html(source: dict[str, Any]) -> str:
     windows = source.get("windows") or source.get("target_windows") or {}
     registry = source.get("registryVersions") or {}
@@ -287,7 +367,13 @@ def source_html(source: dict[str, Any]) -> str:
                             source_ids.append(str(source[key]))
     job_ids = [str(job.get("id")) for job in jobs if isinstance(job, dict) and job.get("id")]
     pills = "".join(f'<span class="pill">{escape(item)}</span>' for item in [*registry.values(), *source_ids, *job_ids[:8]])
-    return windows_html(windows) + (f'<div class="pill-row">{pills}</div>' if pills else '<p class="subtitle">当前摘要未携带覆盖来源明细。</p>')
+    coverage_table = table_html(
+        "覆盖明细",
+        coverage_rows(coverage),
+        ["dataset", "window", "requested", "observed", "gaps", "row_count", "sourceDocumentIds", "importBatchIds"],
+        "当前摘要未携带覆盖窗口明细。",
+    )
+    return windows_html(windows) + (f'<div class="pill-row">{pills}</div>' if pills else '<p class="subtitle">当前摘要未携带覆盖来源明细。</p>') + coverage_table
 
 
 def chart_html(rows: list[dict[str, Any]], label_key: str, value_key: str, caption: str) -> str:
