@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "report": {
+    "type": "diagnosis",
+    "windows": {
+      "current": {"start": "2026-07-01", "end": "2026-07-07"},
+      "previous": {"start": "2026-06-24", "end": "2026-06-30"},
+      "yoy": {"start": "2025-07-01", "end": "2025-07-07"}
+    },
+    "trendWindows": {}
+  },
+  "registryVersions": {
+    "business": "business.2026-09-04.v2"
+  },
+  "coverage": {
+    "business": {
+      "dataset": "business",
+      "registryVersion": "business.2026-09-04.v2",
+      "metadataPolicy": "window",
+      "readable": true,
+      "sources": [
+        {
+          "startDate": "2026-07-01",
+          "endDate": "2026-07-07",
+          "rowCount": 84,
+          "sourceDocumentId": "doc_diagnosis_business",
+          "importBatchId": "imp_diagnosis_business"
+        }
+      ],
+      "windows": {}
+    }
+  },
+  "notices": [
+    {
+      "code": "OPTIONAL_MODULE_MISSING",
+      "dataset": "reviews",
+      "window": "current",
+      "module": "reviewSignals"
+    }
+  ],
+  "resultsByJobId": {
+    "business_current_kpi_totals": {
+      "rows": [
+        {
+          "gross_sales": "10000",
+          "order_revenue": "8000",
+          "discount": "2000",
+          "valid_orders": "410",
+          "positive_orders": "400",
+          "reverse_orders": "10",
+          "settled_orders": "390",
+          "diners": "500",
+          "consumed_tables": "250",
+          "member_revenue": "2400",
+          "weighted_open_rate": "0.52",
+          "weighted_turnover_rate": "1.80"
+        }
+      ]
+    },
+    "business_current_store_totals": {
+      "rows": [
+        {
+          "store_name": "荣京道店",
+          "gross_sales": "6000",
+          "order_revenue": "4800",
+          "discount": "1200",
+          "valid_orders": "246",
+          "positive_orders": "240",
+          "reverse_orders": "6",
+          "settled_orders": "234",
+          "diners": "300",
+          "consumed_tables": "150",
+          "member_revenue": "1500",
+          "weighted_open_rate": "0.60",
+          "weighted_turnover_rate": "2.00"
+        },
+        {
+          "store_name": "龙玥城店",
+          "gross_sales": "4000",
+          "order_revenue": "3200",
+          "discount": "800",
+          "valid_orders": "164",
+          "positive_orders": "160",
+          "reverse_orders": "4",
+          "settled_orders": "156",
+          "diners": "200",
+          "consumed_tables": "100",
+          "member_revenue": "900",
+          "weighted_open_rate": "0.40",
+          "weighted_turnover_rate": "1.50"
+        }
+      ]
+    },
+    "business_current_channel_platform_mix": {
+      "rows": [
+        {
+          "store_name": "荣京道店",
+          "order_category": "店内销售",
+          "order_source": "收银",
+          "dining_method": "堂食",
+          "gross_sales": "3500",
+          "order_revenue": "3000",
+          "discount": "500",
+          "positive_orders": "150"
+        },
+        {
+          "store_name": "荣京道店",
+          "order_category": "外卖",
+          "order_source": "美团",
+          "dining_method": "外卖",
+          "gross_sales": "2500",
+          "order_revenue": "1800",
+          "discount": "700",
+          "positive_orders": "90"
+        },
+        {
+          "store_name": "龙玥城店",
+          "order_category": "店内销售",
+          "order_source": "收银",
+          "dining_method": "堂食",
+          "gross_sales": "2800",
+          "order_revenue": "2200",
+          "discount": "600",
+          "positive_orders": "110"
+        },
+        {
+          "store_name": "龙玥城店",
+          "order_category": "外卖",
+          "order_source": "饿了么",
+          "dining_method": "外卖",
+          "gross_sales": "1200",
+          "order_revenue": "1000",
+          "discount": "200",
+          "positive_orders": "50"
+        }
+      ]
+    },
+    "business_current_member_mix": {
+      "rows": [
+        {"store_name": "荣京道店", "is_member": "1", "order_revenue": "1500", "positive_orders": "75"},
+        {"store_name": "荣京道店", "is_member": "0", "order_revenue": "3300", "positive_orders": "165"},
+        {"store_name": "龙玥城店", "is_member": "1", "order_revenue": "900", "positive_orders": "45"},
+        {"store_name": "龙玥城店", "is_member": "0", "order_revenue": "2300", "positive_orders": "115"}
+      ]
+    },
+    "business_current_payment_mix": {
+      "rows": [
+        {"store_name": "荣京道店", "dining_method": "堂食", "order_source": "扫码支付", "order_revenue": "2600", "positive_orders": "130"},
+        {"store_name": "荣京道店", "dining_method": "外卖", "order_source": "美团", "order_revenue": "1800", "positive_orders": "90"},
+        {"store_name": "龙玥城店", "dining_method": "堂食", "order_source": "扫码支付", "order_revenue": "2000", "positive_orders": "100"},
+        {"store_name": "龙玥城店", "dining_method": "外卖", "order_source": "饿了么", "order_revenue": "1000", "positive_orders": "50"}
+      ]
+    },
+    "business_current_efficiency": {
+      "rows": [
+        {"store_name": "荣京道店", "meal_period": "午餐", "order_revenue": "3000", "consumed_tables": "90", "weighted_open_rate": "0.70", "weighted_turnover_rate": "2.20"},
+        {"store_name": "荣京道店", "meal_period": "晚餐", "order_revenue": "1800", "consumed_tables": "60", "weighted_open_rate": "0.50", "weighted_turnover_rate": "1.70"},
+        {"store_name": "龙玥城店", "meal_period": "午餐", "order_revenue": "1200", "consumed_tables": "45", "weighted_open_rate": "0.35", "weighted_turnover_rate": "1.30"},
+        {"store_name": "龙玥城店", "meal_period": "晚餐", "order_revenue": "2000", "consumed_tables": "55", "weighted_open_rate": "0.45", "weighted_turnover_rate": "1.65"}
+      ]
+    }
+  }
+}
