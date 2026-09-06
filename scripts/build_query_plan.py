@@ -56,6 +56,44 @@ def load_json(path: Path, description: str) -> dict[str, Any]:
     return data
 
 
+def unwrap_mcp_success_envelope(value: dict[str, Any], description: str) -> dict[str, Any]:
+    if value.get("isError") is True or isinstance(value.get("error"), dict):
+        raise PlanError(f"{description} is an MCP error response")
+
+    candidates: list[Any] = []
+    if "result" in value:
+        candidates.append(value["result"])
+    if "payload" in value:
+        candidates.append(value["payload"])
+    if "content" in value:
+        content = value["content"]
+        if (
+            not isinstance(content, list)
+            or len(content) != 1
+            or not isinstance(content[0], dict)
+            or content[0].get("type") != "text"
+            or not isinstance(content[0].get("text"), str)
+        ):
+            raise PlanError(f"{description} has malformed MCP text content")
+        try:
+            candidates.append(json.loads(content[0]["text"]))
+        except json.JSONDecodeError as exc:
+            raise PlanError(f"{description} MCP text content is not valid JSON: {exc}") from exc
+
+    if not candidates:
+        return value
+    if len(candidates) > 1:
+        raise PlanError(f"{description} has ambiguous MCP payload candidates")
+    payload = candidates[0]
+    if not isinstance(payload, dict):
+        raise PlanError(f"{description} MCP payload must be a JSON object")
+    return unwrap_mcp_success_envelope(payload, description)
+
+
+def load_mcp_json(path: Path, description: str) -> dict[str, Any]:
+    return unwrap_mcp_success_envelope(load_json(path, description), description)
+
+
 def parse_date(value: str, label: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -227,7 +265,7 @@ def load_coverage(
                 "readable": False,
             }
             continue
-        envelope = load_json(path, "coverage response")
+        envelope = load_mcp_json(path, "coverage response")
         if (
             envelope.get("dataset") != dataset_name
             or envelope.get("registryVersion") != registry[dataset_name]["registryVersion"]
@@ -1015,7 +1053,7 @@ def main(argv: list[str]) -> int:
         if config.get("schemaVersion") != 1:
             raise PlanError("unsupported config schemaVersion")
         windows = build_windows(args)
-        registry_response = load_json(args.registry_response, "registry response")
+        registry_response = load_mcp_json(args.registry_response, "registry response")
         registry, limits = registry_by_dataset(registry_response)
         validate_config_fields(config, registry)
         coverage, coverage_notices = load_coverage(config, registry, args.coverage_dir)

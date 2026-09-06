@@ -683,6 +683,34 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("exceeds maxSortFields", completed.stderr)
 
+    def test_full_mcp_envelopes_are_accepted_without_manual_unwrapping(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        input_dir = Path(tmp.name)
+
+        def write_wrapped(source: Path, destination: Path) -> None:
+            destination.write_text(
+                json.dumps(
+                    {
+                        "isError": False,
+                        "content": [{"type": "text", "text": source.read_text(encoding="utf-8")}],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+        registry_path = input_dir / "registry_response.json"
+        write_wrapped(FIXTURES / "registry_response.json", registry_path)
+        for source in FIXTURES.glob("coverage_*.json"):
+            write_wrapped(source, input_dir / source.name)
+
+        manifest = self.run_plan(coverage_dir=input_dir, registry_response=registry_path)
+
+        self.assertEqual(len(manifest["jobs"]), 22)
+        self.assertEqual(manifest["outputContract"]["registryVersionSource"], "list_structured_datasets")
+
     def test_cli_help_documents_supported_report_types(self) -> None:
         completed = subprocess.run(
             [sys.executable, str(SCRIPT), "--help"],
