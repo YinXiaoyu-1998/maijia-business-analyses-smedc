@@ -283,6 +283,46 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("<span>current_open_rate</span><strong>18.0%</strong>", visible_html)
         self.assertNotIn("<span>current_open_rate</span><strong>50.0%</strong>", visible_html)
 
+    def test_weekly_headline_open_rate_is_unknown_without_table_day_denominator(self) -> None:
+        bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
+        for row in bundle["resultsByJobId"]["business_current_store_totals"]["rows"]:
+            row.pop("table_days", None)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "bundle.json"
+        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        report_path = output_dir / "no-denominator.html"
+        rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+
+        self.assertIn("<span>current_open_rate</span><strong>暂无</strong>", visible_html)
+        self.assertNotIn("<span>current_open_rate</span><strong>54.0%</strong>", visible_html)
+
+    def test_monthly_headline_open_rate_is_unknown_with_zero_table_day_denominator(self) -> None:
+        bundle = json.loads((FIXTURES / "monthly_bundle.json").read_text(encoding="utf-8"))
+        for row in bundle["resultsByJobId"]["business_current_store_totals"]["rows"]:
+            row["table_days"] = "0"
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "bundle.json"
+        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        profile = run_script("scripts/profile_monthly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        report_path = output_dir / "zero-denominator.html"
+        rendered = run_script("scripts/generate_monthly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+
+        self.assertIn("<span>current_open_rate</span><strong>暂无</strong>", visible_html)
+        self.assertNotIn("<span>current_open_rate</span><strong>53.5%</strong>", visible_html)
+
     def test_runners_profile_render_and_print_final_json(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

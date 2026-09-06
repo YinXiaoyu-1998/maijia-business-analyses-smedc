@@ -22,7 +22,7 @@ from generate_business_report_html import (
 )
 
 
-def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float]:
+def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float | None]:
     fields = [
         "current_net_revenue",
         "previous_net_revenue",
@@ -40,7 +40,6 @@ def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float]:
             weight_field = f"{prefix}_table_days"
             weighted_sum = 0.0
             denominator = 0.0
-            unweighted = []
             for row in rows:
                 if row.get(field) in {"", None}:
                     continue
@@ -52,12 +51,7 @@ def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float]:
                 if weight > 0:
                     weighted_sum += value * weight
                     denominator += weight
-                else:
-                    unweighted.append(value)
-            if denominator > 0:
-                totals[field] = round(weighted_sum / denominator, 4)
-            else:
-                totals[field] = round(sum(unweighted) / len(unweighted), 4) if unweighted else 0.0
+            totals[field] = round(weighted_sum / denominator, 4) if denominator > 0 else None
         else:
             values = []
             for row in rows:

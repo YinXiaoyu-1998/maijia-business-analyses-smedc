@@ -10,6 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "profile_business_data.py"
 FIXTURE = ROOT / "tests" / "fixtures" / "diagnosis_bundle.json"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from report_common import aggregate_rows, metric_row  # noqa: E402
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -134,6 +137,63 @@ class ProfileBusinessDataTests(unittest.TestCase):
         channel_rows = read_csv(output_dir / "channel_summary.csv")
         self.assertEqual(channel_rows[0]["open_rate"], "0.18")
         self.assertEqual(channel_rows[0]["turnover_rate"], "1.3")
+
+    def test_cross_row_rate_rollups_require_positive_table_days(self) -> None:
+        source = aggregate_rows(
+            [
+                {"weighted_open_rate": "0.90", "weighted_turnover_rate": "4.00"},
+                {"weighted_open_rate": "0.10", "weighted_turnover_rate": "1.00", "table_days": "0"},
+            ]
+        )
+
+        fact = metric_row(source)
+
+        self.assertIsNone(fact["open_rate"])
+        self.assertIsNone(fact["turnover_rate"])
+
+    def test_cross_row_rate_rollups_ignore_rows_without_positive_table_days(self) -> None:
+        source = aggregate_rows(
+            [
+                {"order_revenue": "100", "weighted_open_rate": "0.90", "weighted_turnover_rate": "4.00"},
+                {"order_revenue": "200", "weighted_open_rate": "0.10", "weighted_turnover_rate": "1.00", "table_days": "0"},
+                {"order_revenue": "300", "weighted_open_rate": "0.25", "weighted_turnover_rate": "2.00", "table_days": "4"},
+            ]
+        )
+
+        fact = metric_row(source)
+
+        self.assertEqual(fact["net_revenue"], 600.0)
+        self.assertEqual(fact["open_rate"], 0.25)
+        self.assertEqual(fact["turnover_rate"], 2.0)
+
+    def test_diagnosis_group_rollups_leave_rates_blank_when_denominator_is_missing(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["business_current_channel_platform_mix"]["rows"] = [
+            {
+                "store_name": "荣京道店",
+                "order_category": "店内销售",
+                "order_source": "收银",
+                "dining_method": "堂食",
+                "order_revenue": "9000",
+                "weighted_open_rate": "0.90",
+                "weighted_turnover_rate": "4.00",
+            },
+            {
+                "store_name": "龙玥城店",
+                "order_category": "店内销售",
+                "order_source": "收银",
+                "dining_method": "堂食",
+                "order_revenue": "1000",
+                "weighted_open_rate": "0.10",
+                "weighted_turnover_rate": "1.00",
+            },
+        ]
+
+        output_dir, _ = self.run_profile(bundle)
+
+        channel_rows = read_csv(output_dir / "channel_summary.csv")
+        self.assertEqual(channel_rows[0]["open_rate"], "")
+        self.assertEqual(channel_rows[0]["turnover_rate"], "")
 
     def test_diagnosis_sorts_equal_revenue_groups_by_stable_labels(self) -> None:
         bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))

@@ -327,9 +327,8 @@ def aggregate_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     present: set[str] = set()
     weighted_open = Decimal("0")
     weighted_turnover = Decimal("0")
-    weighted_denominator = Decimal("0")
-    has_open = False
-    has_turnover = False
+    open_denominator = Decimal("0")
+    turnover_denominator = Decimal("0")
     count = 0
     for row in rows:
         count += 1
@@ -337,22 +336,21 @@ def aggregate_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
             if has_number(row, source_key):
                 sums[source_key] += dec(row.get(source_key))
                 present.add(source_key)
-        weight = optional_dec(row, "table_days") or Decimal("1")
-        if has_number(row, "weighted_open_rate"):
+        weight = optional_dec(row, "table_days")
+        valid_weight = weight is not None and weight > 0
+        if valid_weight and has_number(row, "weighted_open_rate"):
             weighted_open += dec(row.get("weighted_open_rate")) * weight
-            has_open = True
-        if has_number(row, "weighted_turnover_rate"):
+            open_denominator += weight
+        if valid_weight and has_number(row, "weighted_turnover_rate"):
             weighted_turnover += dec(row.get("weighted_turnover_rate")) * weight
-            has_turnover = True
-        weighted_denominator += weight
+            turnover_denominator += weight
     for key in present:
         source[key] = sums[key]
     source["rows"] = count
-    if weighted_denominator:
-        if has_open:
-            source["weighted_open_rate"] = weighted_open / weighted_denominator
-        if has_turnover:
-            source["weighted_turnover_rate"] = weighted_turnover / weighted_denominator
+    if open_denominator:
+        source["weighted_open_rate"] = weighted_open / open_denominator
+    if turnover_denominator:
+        source["weighted_turnover_rate"] = weighted_turnover / turnover_denominator
     return dict(source)
 
 
