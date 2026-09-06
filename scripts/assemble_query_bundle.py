@@ -170,11 +170,14 @@ def expected_response_paths(responses_dir: Path, jobs: list[dict[str, Any]]) -> 
 def validate_no_unplanned_response_files(responses_dir: Path, expected: dict[str, Path]) -> None:
     if not responses_dir.exists():
         return
+    planned_dirs = {path.parent for path in expected.values()}
     expected_relative = set(expected)
     for path in sorted(responses_dir.rglob("*.json")):
         relative = path.relative_to(responses_dir).as_posix()
         if relative not in expected_relative:
-            raise BundleError(f"response file does not correspond to a manifest job: {relative}")
+            resolved_parent = path.resolve().parent
+            if any(resolved_parent == directory or directory in resolved_parent.parents for directory in planned_dirs):
+                raise BundleError(f"response file does not correspond to a manifest job: {relative}")
 
 
 def is_error_envelope(value: Any) -> bool:

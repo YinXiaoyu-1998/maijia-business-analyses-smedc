@@ -28,28 +28,28 @@
   "resultsByJobId": {
     "business_current_store_totals": {
       "rows": [
-        {"store_name": "荣京道店", "gross_sales": "12500", "order_revenue": "10000", "discount": "2500", "positive_orders": "500", "diners": "620", "consumed_tables": "280", "member_revenue": "3000", "weighted_open_rate": "0.625", "weighted_turnover_rate": "2.10"},
-        {"store_name": "龙玥城店", "gross_sales": "6250", "order_revenue": "5000", "discount": "1250", "positive_orders": "250", "diners": "330", "consumed_tables": "150", "member_revenue": "1500", "weighted_open_rate": "0.455", "weighted_turnover_rate": "1.60"}
+        {"store_name": "荣京道店", "gross_sales": "12500", "order_revenue": "10000", "discount": "2500", "positive_orders": "500", "diners": "620", "consumed_tables": "280", "member_revenue": "3000", "table_days": "280", "weighted_open_rate": "0.625", "weighted_turnover_rate": "2.10"},
+        {"store_name": "龙玥城店", "gross_sales": "6250", "order_revenue": "5000", "discount": "1250", "positive_orders": "250", "diners": "330", "consumed_tables": "150", "member_revenue": "1500", "table_days": "150", "weighted_open_rate": "0.455", "weighted_turnover_rate": "1.60"}
       ]
     },
     "business_previous_store_totals": {
       "rows": [
-        {"store_name": "荣京道店", "gross_sales": "10000", "order_revenue": "8000", "discount": "2000", "positive_orders": "400", "diners": "540", "consumed_tables": "250", "member_revenue": "2400", "weighted_open_rate": "0.500", "weighted_turnover_rate": "1.90"},
-        {"store_name": "龙玥城店", "gross_sales": "8750", "order_revenue": "7000", "discount": "1750", "positive_orders": "350", "diners": "410", "consumed_tables": "180", "member_revenue": "2100", "weighted_open_rate": "0.520", "weighted_turnover_rate": "1.80"}
+        {"store_name": "荣京道店", "gross_sales": "10000", "order_revenue": "8000", "discount": "2000", "positive_orders": "400", "diners": "540", "consumed_tables": "250", "member_revenue": "2400", "table_days": "250", "weighted_open_rate": "0.500", "weighted_turnover_rate": "1.90"},
+        {"store_name": "龙玥城店", "gross_sales": "8750", "order_revenue": "7000", "discount": "1750", "positive_orders": "350", "diners": "410", "consumed_tables": "180", "member_revenue": "2100", "table_days": "180", "weighted_open_rate": "0.520", "weighted_turnover_rate": "1.80"}
       ]
     },
     "business_yoy_store_totals": {
       "rows": [
-        {"store_name": "荣京道店", "gross_sales": "11250", "order_revenue": "9000", "discount": "2250", "positive_orders": "450", "diners": "560", "consumed_tables": "260", "member_revenue": "2700", "weighted_open_rate": "0.550", "weighted_turnover_rate": "1.95"},
-        {"store_name": "龙玥城店", "gross_sales": "5000", "order_revenue": "4000", "discount": "1000", "positive_orders": "200", "diners": "250", "consumed_tables": "130", "member_revenue": "1200", "weighted_open_rate": "0.400", "weighted_turnover_rate": "1.45"}
+        {"store_name": "荣京道店", "gross_sales": "11250", "order_revenue": "9000", "discount": "2250", "positive_orders": "450", "diners": "560", "consumed_tables": "260", "member_revenue": "2700", "table_days": "260", "weighted_open_rate": "0.550", "weighted_turnover_rate": "1.95"},
+        {"store_name": "龙玥城店", "gross_sales": "5000", "order_revenue": "4000", "discount": "1000", "positive_orders": "200", "diners": "250", "consumed_tables": "130", "member_revenue": "1200", "table_days": "130", "weighted_open_rate": "0.400", "weighted_turnover_rate": "1.45"}
       ]
     },
     "business_16_week_store_trend": {
       "rows": [
-        {"store_name": "荣京道店", "business_week": "2026-W29", "gross_sales": "10000", "order_revenue": "8000", "positive_orders": "400", "weighted_open_rate": "0.50", "weighted_turnover_rate": "1.90"},
-        {"store_name": "荣京道店", "business_week": "2026-W30", "gross_sales": "12500", "order_revenue": "10000", "positive_orders": "500", "weighted_open_rate": "0.625", "weighted_turnover_rate": "2.10"},
-        {"store_name": "龙玥城店", "business_week": "2026-W29", "gross_sales": "8750", "order_revenue": "7000", "positive_orders": "350", "weighted_open_rate": "0.52", "weighted_turnover_rate": "1.80"},
-        {"store_name": "龙玥城店", "business_week": "2026-W30", "gross_sales": "6250", "order_revenue": "5000", "positive_orders": "250", "weighted_open_rate": "0.455", "weighted_turnover_rate": "1.60"}
+        {"store_name": "荣京道店", "business_week": "2026-W29", "gross_sales": "10000", "order_revenue": "8000", "positive_orders": "400", "table_days": "250", "weighted_open_rate": "0.50", "weighted_turnover_rate": "1.90"},
+        {"store_name": "荣京道店", "business_week": "2026-W30", "gross_sales": "12500", "order_revenue": "10000", "positive_orders": "500", "table_days": "280", "weighted_open_rate": "0.625", "weighted_turnover_rate": "2.10"},
+        {"store_name": "龙玥城店", "business_week": "2026-W29", "gross_sales": "8750", "order_revenue": "7000", "positive_orders": "350", "table_days": "180", "weighted_open_rate": "0.52", "weighted_turnover_rate": "1.80"},
+        {"store_name": "龙玥城店", "business_week": "2026-W30", "gross_sales": "6250", "order_revenue": "5000", "positive_orders": "250", "table_days": "150", "weighted_open_rate": "0.455", "weighted_turnover_rate": "1.60"}
       ]
     },
     "business_current_channel_platform_mix": {

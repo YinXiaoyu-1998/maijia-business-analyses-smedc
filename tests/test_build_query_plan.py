@@ -162,6 +162,30 @@ class BuildQueryPlanTests(unittest.TestCase):
 
         return self.write_fixture_copy(replace_business_sources)
 
+    def coverage_with_two_catalog_snapshots(self) -> Path:
+        def replace_catalog_sources(name: str, data: dict) -> dict:
+            if name != "coverage_dish_catalog.json":
+                return data
+            return {
+                **data,
+                "sources": [
+                    {
+                        "snapshotDate": "2026-06-30",
+                        "sourceDocumentId": "doc_catalog_old",
+                        "importBatchId": "imp_catalog_old",
+                        "rowCount": 90,
+                    },
+                    {
+                        "snapshotDate": "2026-07-31",
+                        "sourceDocumentId": "doc_catalog_latest",
+                        "importBatchId": "imp_catalog_latest",
+                        "rowCount": 110,
+                    },
+                ],
+            }
+
+        return self.write_fixture_copy(replace_catalog_sources)
+
     def job(self, manifest: dict, job_id: str) -> dict:
         matches = [job for job in manifest["jobs"] if job["id"] == job_id]
         self.assertEqual(len(matches), 1, job_id)
@@ -258,6 +282,74 @@ class BuildQueryPlanTests(unittest.TestCase):
         catalog = self.job(manifest, "dish_catalog_current_snapshot")
         self.assertEqual(catalog["input"]["sort"][0], {"field": "snapshot_date", "direction": "desc"})
         self.assertEqual(catalog["input"]["page"]["limit"], 200)
+
+    def test_catalog_job_filters_latest_visible_snapshot_and_preserves_sources(self) -> None:
+        manifest = self.run_plan(
+            report_type="weekly",
+            coverage_dir=self.coverage_with_two_catalog_snapshots(),
+        )
+
+        catalog = self.job(manifest, "dish_catalog_current_snapshot")
+        self.assertEqual(
+            catalog["input"]["filter"],
+            {"field": "snapshot_date", "op": "eq", "value": "2026-07-31"},
+        )
+        self.assertEqual(manifest["coverage"]["dish_catalog"]["snapshots"], ["2026-06-30", "2026-07-31"])
+        self.assertEqual(
+            manifest["coverage"]["dish_catalog"]["sources"],
+            [
+                {
+                    "snapshotDate": "2026-06-30",
+                    "rowCount": 90,
+                    "importBatchId": "imp_catalog_old",
+                    "sourceDocumentId": "doc_catalog_old",
+                },
+                {
+                    "snapshotDate": "2026-07-31",
+                    "rowCount": 110,
+                    "importBatchId": "imp_catalog_latest",
+                    "sourceDocumentId": "doc_catalog_latest",
+                },
+            ],
+        )
+
+    def test_business_jobs_include_supplemental_channel_platform_and_table_day_metrics(self) -> None:
+        manifest = self.run_plan(report_type="diagnosis")
+
+        for base_id in ["business_current_kpi_totals", "business_current_store_totals"]:
+            channel_job = self.job(manifest, f"{base_id}_supplemental_channel")
+            platform_job = self.job(manifest, f"{base_id}_supplemental_platform")
+            self.assertEqual(channel_job["input"]["groupBy"], self.job(manifest, base_id)["input"]["groupBy"])
+            self.assertEqual(platform_job["input"]["groupBy"], self.job(manifest, base_id)["input"]["groupBy"])
+            self.assertLessEqual(len(channel_job["input"]["aggregates"]), 12)
+            self.assertLessEqual(len(platform_job["input"]["aggregates"]), 12)
+            channel_aliases = {aggregate["as"] for aggregate in channel_job["input"]["aggregates"]}
+            platform_aliases = {aggregate["as"] for aggregate in platform_job["input"]["aggregates"]}
+            self.assertGreaterEqual(
+                channel_aliases,
+                {
+                    "table_days",
+                    "dine_in_sales_amount",
+                    "dine_in_revenue",
+                    "dine_in_positive_orders",
+                    "dine_in_refund_amount",
+                    "delivery_sales_amount",
+                    "delivery_revenue",
+                    "delivery_positive_orders",
+                },
+            )
+            self.assertGreaterEqual(
+                platform_aliases,
+                {
+                    "delivery_refund_amount",
+                    "meituan_delivery_sales_amount",
+                    "meituan_delivery_revenue",
+                    "eleme_delivery_sales_amount",
+                    "eleme_delivery_revenue",
+                    "jd_delivery_sales_amount",
+                    "jd_delivery_revenue",
+                },
+            )
 
     def test_monthly_manifest_includes_six_month_current_and_prior_year_trends(self) -> None:
         manifest = self.run_plan(

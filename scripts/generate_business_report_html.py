@@ -365,7 +365,7 @@ def source_html(source: dict[str, Any]) -> str:
                     for key in ("sourceDocumentId", "importBatchId"):
                         if source.get(key):
                             source_ids.append(str(source[key]))
-    job_ids = [str(job.get("id")) for job in jobs if isinstance(job, dict) and job.get("id")]
+    job_ids = [str(job.get("id") or job.get("jobId")) for job in jobs if isinstance(job, dict) and (job.get("id") or job.get("jobId"))]
     pills = "".join(f'<span class="pill">{escape(item)}</span>' for item in [*registry.values(), *source_ids, *job_ids[:8]])
     coverage_table = table_html(
         "覆盖明细",

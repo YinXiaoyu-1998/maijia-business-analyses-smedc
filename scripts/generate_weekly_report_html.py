@@ -35,16 +35,36 @@ def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float]:
     ]
     totals: dict[str, float] = {}
     for field in fields:
-        values = []
-        for row in rows:
-            try:
-                values.append(float(row.get(field) or 0))
-            except ValueError:
-                values.append(0.0)
         if field.endswith("_rate"):
-            nonempty = [value for row, value in zip(rows, values) if row.get(field) not in {"", None}]
-            totals[field] = round(sum(nonempty) / len(nonempty), 4) if nonempty else 0.0
+            prefix = field[: -len("_open_rate")] if field.endswith("_open_rate") else field.rsplit("_", 1)[0]
+            weight_field = f"{prefix}_table_days"
+            weighted_sum = 0.0
+            denominator = 0.0
+            unweighted = []
+            for row in rows:
+                if row.get(field) in {"", None}:
+                    continue
+                try:
+                    value = float(row.get(field) or 0)
+                    weight = float(row.get(weight_field) or 0)
+                except ValueError:
+                    continue
+                if weight > 0:
+                    weighted_sum += value * weight
+                    denominator += weight
+                else:
+                    unweighted.append(value)
+            if denominator > 0:
+                totals[field] = round(weighted_sum / denominator, 4)
+            else:
+                totals[field] = round(sum(unweighted) / len(unweighted), 4) if unweighted else 0.0
         else:
+            values = []
+            for row in rows:
+                try:
+                    values.append(float(row.get(field) or 0))
+                except ValueError:
+                    values.append(0.0)
             totals[field] = round(sum(values), 2)
     return totals
 

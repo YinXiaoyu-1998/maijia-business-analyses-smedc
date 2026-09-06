@@ -120,3 +120,28 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         self.assertEqual(by_store["龙玥城店"]["wow_net_revenue_pct"], "")
         self.assertIn("COVERAGE_WINDOW_MISSING", [notice["code"] for notice in summary["notices"]])
         self.assertEqual(summary["meta"]["coverage"], bundle["coverage"])
+
+    def test_catalog_matching_uses_latest_snapshot_when_rows_conflict(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["dish_catalog_current_snapshot"]["rows"] = [
+            {
+                "snapshot_date": "2026-07-26",
+                "dish_name": "招牌牛肉面",
+                "base_category_name": "面档",
+                "dish_alias": "牛肉面",
+                "sale_price": "20",
+            },
+            {
+                "snapshot_date": "2026-06-30",
+                "dish_name": "招牌牛肉面",
+                "base_category_name": "旧档口",
+                "dish_alias": "牛肉面",
+                "sale_price": "20",
+            },
+        ]
+
+        output_dir, _ = self.run_profile(bundle)
+
+        product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
+        beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
+        self.assertEqual(beef["档口"], "面档")

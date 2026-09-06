@@ -45,6 +45,7 @@ METRIC_FIELDS = [
     "jd_delivery_revenue",
     "member_revenue",
     "member_revenue_share",
+    "table_days",
 ]
 
 COMPARISON_METRICS = [
@@ -75,7 +76,48 @@ MONEY_KEYS = {
     "diners": "customer_count",
     "consumed_tables": "consumed_tables",
     "member_revenue": "member_revenue",
+    "table_days": "table_days",
+    "dine_in_sales_amount": "dine_in_sales_amount",
+    "dine_in_revenue": "dine_in_revenue",
+    "dine_in_discount": "dine_in_discount",
+    "dine_in_orders": "dine_in_orders",
+    "dine_in_positive_orders": "dine_in_positive_orders",
+    "dine_in_refund_amount": "dine_in_refund_amount",
+    "delivery_sales_amount": "delivery_sales_amount",
+    "delivery_revenue": "delivery_revenue",
+    "delivery_discount": "delivery_discount",
+    "delivery_orders": "delivery_orders",
+    "delivery_positive_orders": "delivery_positive_orders",
+    "delivery_refund_amount": "delivery_refund_amount",
+    "meituan_delivery_sales_amount": "meituan_delivery_sales_amount",
+    "meituan_delivery_revenue": "meituan_delivery_revenue",
+    "meituan_delivery_refund_amount": "meituan_delivery_refund_amount",
+    "eleme_delivery_sales_amount": "eleme_delivery_sales_amount",
+    "eleme_delivery_revenue": "eleme_delivery_revenue",
+    "eleme_delivery_refund_amount": "eleme_delivery_refund_amount",
+    "jd_delivery_sales_amount": "jd_delivery_sales_amount",
+    "jd_delivery_revenue": "jd_delivery_revenue",
+    "jd_delivery_refund_amount": "jd_delivery_refund_amount",
+    "pickup_sales_amount": "pickup_sales_amount",
+    "pickup_revenue": "pickup_revenue",
+    "pickup_discount": "pickup_discount",
+    "pickup_orders": "pickup_orders",
+    "pickup_positive_orders": "pickup_positive_orders",
+    "pickup_refund_amount": "pickup_refund_amount",
 }
+
+COMPANION_SUFFIXES = ("supplemental_channel", "supplemental_platform", "supplemental_pickup")
+GROUP_KEY_CANDIDATES = (
+    "store_name",
+    "business_week",
+    "business_month",
+    "order_category",
+    "order_source",
+    "dining_method",
+    "is_member",
+    "meal_period",
+    "time_slot",
+)
 
 
 class ProfileError(ValueError):
@@ -101,14 +143,82 @@ def load_bundle(path: Path, expected_type: str) -> dict[str, Any]:
     return bundle
 
 
-def rows_for(bundle: dict[str, Any], job_id: str) -> list[dict[str, Any]]:
+def job_result(bundle: dict[str, Any], job_id: str) -> dict[str, Any] | None:
     result = bundle.get("resultsByJobId", {}).get(job_id)
+    if not isinstance(result, dict):
+        return None
+    return result
+
+
+def result_rows(result: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(result, dict):
         return []
     rows = result.get("rows")
     if not isinstance(rows, list):
         return []
     return [row for row in rows if isinstance(row, dict)]
+
+
+def group_keys_for_result(result: dict[str, Any] | None, rows: list[dict[str, Any]]) -> list[str]:
+    if isinstance(result, dict):
+        query = result.get("query")
+        if isinstance(query, dict) and isinstance(query.get("groupBy"), list):
+            keys = [key for key in query["groupBy"] if isinstance(key, str)]
+            if keys:
+                return keys
+    present = set().union(*(row.keys() for row in rows)) if rows else set()
+    return [key for key in GROUP_KEY_CANDIDATES if key in present]
+
+
+def merge_rows_by_group_keys(
+    base_rows: list[dict[str, Any]],
+    companion_rows: list[dict[str, Any]],
+    group_keys: list[str],
+) -> list[dict[str, Any]]:
+    def key_for(row: dict[str, Any]) -> tuple[Any, ...]:
+        return tuple(row.get(key) for key in group_keys)
+
+    merged: dict[tuple[Any, ...], dict[str, Any]] = {}
+    order: list[tuple[Any, ...]] = []
+    for row in base_rows:
+        key = key_for(row)
+        if key not in merged:
+            order.append(key)
+        merged[key] = dict(row)
+    base_order_count = len(order)
+    for row in companion_rows:
+        key = key_for(row)
+        if key not in merged:
+            order.append(key)
+            merged[key] = {key_name: row.get(key_name) for key_name in group_keys}
+        merged[key].update(row)
+    extra_order = sorted(order[base_order_count:], key=lambda item: tuple(str(value) for value in item))
+    ordered_keys = order[:base_order_count] + extra_order
+    return [merged[key] for key in ordered_keys]
+
+
+def rows_for(bundle: dict[str, Any], job_id: str) -> list[dict[str, Any]]:
+    result = job_result(bundle, job_id)
+    rows = result_rows(result)
+    if job_id.endswith(COMPANION_SUFFIXES):
+        return rows
+    companions: list[dict[str, Any]] = []
+    for suffix in COMPANION_SUFFIXES:
+        companions.extend(result_rows(job_result(bundle, f"{job_id}_{suffix}")))
+    if not companions:
+        return rows
+    group_keys = group_keys_for_result(result, [*rows, *companions])
+    return merge_rows_by_group_keys(rows, companions, group_keys)
+
+
+def job_metadata(bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    jobs = bundle.get("jobs")
+    if isinstance(jobs, list):
+        return [job for job in jobs if isinstance(job, dict)]
+    results = bundle.get("resultsByJobId", {})
+    if not isinstance(results, dict):
+        return []
+    return [{"jobId": job_id} for job_id in sorted(results)]
 
 
 def dec(value: Any) -> Decimal:
@@ -175,6 +285,7 @@ def metric_row(source: dict[str, Any]) -> dict[str, Any]:
     delivery_orders = optional_dec(source, "delivery_positive_orders")
     dine_in_revenue = optional_dec(source, "dine_in_revenue")
     dine_in_orders = optional_dec(source, "dine_in_positive_orders")
+    table_days = optional_dec(source, "table_days")
     row: dict[str, Any] = {
         "rows": int(dec(source.get("rows") if has_number(source, "rows") else source.get("row_count") if has_number(source, "row_count") else 1)),
         "active_days": source.get("active_days"),
@@ -205,6 +316,7 @@ def metric_row(source: dict[str, Any]) -> dict[str, Any]:
         "jd_delivery_revenue": optional_round(source, "jd_delivery_revenue"),
         "member_revenue": rounded(member_revenue, 2),
         "member_revenue_share": rounded(div(member_revenue, revenue), 4) if member_revenue is not None and revenue is not None else None,
+        "table_days": rounded(table_days, 2),
     }
     return row
 
@@ -225,7 +337,7 @@ def aggregate_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
             if has_number(row, source_key):
                 sums[source_key] += dec(row.get(source_key))
                 present.add(source_key)
-        weight = optional_dec(row, "order_revenue") or Decimal("1")
+        weight = optional_dec(row, "table_days") or Decimal("1")
         if has_number(row, "weighted_open_rate"):
             weighted_open += dec(row.get("weighted_open_rate")) * weight
             has_open = True
@@ -424,7 +536,10 @@ def normalize_text(value: Any) -> str:
 
 def catalog_lookup(rows: list[dict[str, Any]]) -> dict[str, str]:
     lookup: dict[str, str] = {}
-    for row in rows:
+    snapshot_dates = sorted(str(row.get("snapshot_date")) for row in rows if row.get("snapshot_date"))
+    latest_snapshot = snapshot_dates[-1] if snapshot_dates else None
+    selected_rows = [row for row in rows if not latest_snapshot or str(row.get("snapshot_date")) == latest_snapshot]
+    for row in selected_rows:
         stall = str(row.get("base_category_name") or UNMATCHED_STALL)
         for key in (row.get("dish_name"), row.get("dish_alias")):
             normalized = normalize_text(key)

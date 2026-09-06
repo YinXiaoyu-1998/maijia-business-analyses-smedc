@@ -52,8 +52,55 @@
           "diners": "500",
           "consumed_tables": "250",
           "member_revenue": "2400",
+          "table_days": "250",
           "weighted_open_rate": "0.52",
           "weighted_turnover_rate": "1.80"
+        }
+      ]
+    },
+    "business_current_kpi_totals_supplemental_channel": {
+      "rows": [
+        {
+          "table_days": "250",
+          "dine_in_sales_amount": "5200",
+          "dine_in_revenue": "4200",
+          "dine_in_discount": "1000",
+          "dine_in_orders": "220",
+          "dine_in_positive_orders": "210",
+          "dine_in_refund_amount": "120",
+          "delivery_sales_amount": "4800",
+          "delivery_revenue": "3800",
+          "delivery_discount": "1000",
+          "delivery_orders": "200",
+          "delivery_positive_orders": "190"
+        }
+      ]
+    },
+    "business_current_kpi_totals_supplemental_platform": {
+      "rows": [
+        {
+          "delivery_refund_amount": "80",
+          "meituan_delivery_sales_amount": "2500",
+          "meituan_delivery_revenue": "1800",
+          "meituan_delivery_refund_amount": "50",
+          "eleme_delivery_sales_amount": "1200",
+          "eleme_delivery_revenue": "1000",
+          "eleme_delivery_refund_amount": "30",
+          "jd_delivery_sales_amount": "0",
+          "jd_delivery_revenue": "0",
+          "jd_delivery_refund_amount": "0",
+          "pickup_sales_amount": "0",
+          "pickup_revenue": "0"
+        }
+      ]
+    },
+    "business_current_kpi_totals_supplemental_pickup": {
+      "rows": [
+        {
+          "pickup_discount": "0",
+          "pickup_orders": "0",
+          "pickup_positive_orders": "0",
+          "pickup_refund_amount": "0"
         }
       ]
     },
@@ -71,6 +118,7 @@
           "diners": "300",
           "consumed_tables": "150",
           "member_revenue": "1500",
+          "table_days": "150",
           "weighted_open_rate": "0.60",
           "weighted_turnover_rate": "2.00"
         },
@@ -86,6 +134,7 @@
           "diners": "200",
           "consumed_tables": "100",
           "member_revenue": "900",
+          "table_days": "100",
           "weighted_open_rate": "0.40",
           "weighted_turnover_rate": "1.50"
         }

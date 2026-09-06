@@ -232,6 +232,57 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("imp_visible_trend", visible_html)
         self.assertIn("COVERAGE_WINDOW_PARTIAL", visible_html)
 
+    def test_report_source_section_renders_bundle_job_ids_visibly(self) -> None:
+        _, html, _ = self.render_from_profile(
+            "profile_weekly_data.py",
+            "generate_weekly_report_html.py",
+            "weekly_bundle.json",
+            "weekly_meeting_summary.json",
+        )
+        visible_html = strip_embedded_scripts(html)
+
+        self.assertIn("business_current_store_totals", visible_html)
+
+    def test_weekly_headline_open_rate_uses_table_day_denominator(self) -> None:
+        bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["business_current_store_totals"]["rows"] = [
+            {
+                "store_name": "高收入低桌天店",
+                "order_revenue": "9000",
+                "gross_sales": "10000",
+                "positive_orders": "90",
+                "diners": "100",
+                "table_days": "1",
+                "weighted_open_rate": "0.90",
+            },
+            {
+                "store_name": "低收入高桌天店",
+                "order_revenue": "1000",
+                "gross_sales": "1200",
+                "positive_orders": "10",
+                "diners": "20",
+                "table_days": "9",
+                "weighted_open_rate": "0.10",
+            },
+        ]
+        for job_id in ("business_previous_store_totals", "business_yoy_store_totals"):
+            bundle["resultsByJobId"][job_id]["rows"] = []
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "bundle.json"
+        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        report_path = output_dir / "weighted.html"
+        rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+
+        self.assertIn("<span>current_open_rate</span><strong>18.0%</strong>", visible_html)
+        self.assertNotIn("<span>current_open_rate</span><strong>50.0%</strong>", visible_html)
+
     def test_runners_profile_render_and_print_final_json(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

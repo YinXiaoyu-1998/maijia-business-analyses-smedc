@@ -6,11 +6,13 @@ from __future__ import annotations
 import json
 import sys
 from collections import defaultdict
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from report_common import (
     aggregate_rows,
+    job_metadata,
     load_bundle,
     metric_row,
     optional_dec,
@@ -64,6 +66,14 @@ def diagnosis_metric_row(source: dict[str, Any]) -> dict[str, Any]:
     dine_in_revenue = optional_dec(source, "dine_in_revenue")
     pickup_revenue = optional_dec(source, "pickup_revenue")
     refund_amount = optional_dec(source, "refund_amount_known")
+    if refund_amount is None:
+        refund_parts = [
+            optional_dec(source, "dine_in_refund_amount"),
+            optional_dec(source, "delivery_refund_amount"),
+            optional_dec(source, "pickup_refund_amount"),
+        ]
+        known_refunds = [part for part in refund_parts if part is not None]
+        refund_amount = sum(known_refunds, start=Decimal("0")) if known_refunds else None
     revenue = optional_dec(source, "order_revenue")
     row.update(
         {
@@ -151,7 +161,7 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
             "windows": bundle["report"]["windows"],
             "registryVersions": bundle.get("registryVersions", {}),
             "coverage": bundle.get("coverage", {}),
-            "jobs": bundle.get("jobs", []),
+            "jobs": job_metadata(bundle),
             "outputContract": bundle.get("outputContract"),
         },
         "overall_kpis": overall,

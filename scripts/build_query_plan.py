@@ -329,9 +329,18 @@ def source_summaries(coverage: dict[str, Any], windows: dict[str, DateWindow]) -
         "windows": {},
     }
     if coverage["metadataPolicy"] == "snapshot":
-        snapshots = sorted(
-            [source["snapshotDate"] for source in coverage.get("sources", [])],
-        )
+        sources = []
+        for source in sorted(coverage.get("sources", []), key=lambda item: item["snapshotDate"]):
+            sources.append(
+                {
+                    "snapshotDate": source["snapshotDate"],
+                    "rowCount": source.get("rowCount"),
+                    "importBatchId": source.get("importBatchId"),
+                    "sourceDocumentId": source.get("sourceDocumentId"),
+                }
+            )
+        snapshots = [source["snapshotDate"] for source in sources]
+        result["sources"] = sources
         result["snapshots"] = snapshots
         return result
 
@@ -396,6 +405,81 @@ def business_aggregates(config: dict[str, Any], registry: dict[str, dict[str, An
     return aggregates
 
 
+def supplemental_aggregates(
+    config: dict[str, Any],
+    registry: dict[str, dict[str, Any]],
+    specs: list[tuple[str, str]],
+) -> list[dict[str, str]]:
+    aggregates: list[dict[str, str]] = []
+    for dotted_ref, alias in specs:
+        field = require_field(config, registry, dotted_ref, "aggregate")
+        aggregates.append({"op": "sum", "field": field.canonical, "as": alias})
+    return aggregates
+
+
+def business_supplemental_aggregate_sets(
+    config: dict[str, Any],
+    registry: dict[str, dict[str, Any]],
+) -> list[tuple[str, list[dict[str, str]]]]:
+    return [
+        (
+            "supplemental_channel",
+            supplemental_aggregates(
+                config,
+                registry,
+                [
+                    ("business.tableDayCount", "table_days"),
+                    ("business.dineInGrossSales", "dine_in_sales_amount"),
+                    ("business.dineInRevenue", "dine_in_revenue"),
+                    ("business.dineInDiscount", "dine_in_discount"),
+                    ("business.dineInOrders", "dine_in_orders"),
+                    ("business.dineInPositiveOrders", "dine_in_positive_orders"),
+                    ("business.dineInRefundAmount", "dine_in_refund_amount"),
+                    ("business.deliveryGrossSales", "delivery_sales_amount"),
+                    ("business.deliveryRevenue", "delivery_revenue"),
+                    ("business.deliveryDiscount", "delivery_discount"),
+                    ("business.deliveryOrders", "delivery_orders"),
+                    ("business.deliveryPositiveOrders", "delivery_positive_orders"),
+                ],
+            ),
+        ),
+        (
+            "supplemental_platform",
+            supplemental_aggregates(
+                config,
+                registry,
+                [
+                    ("business.deliveryRefundAmount", "delivery_refund_amount"),
+                    ("business.meituanDeliveryGrossSales", "meituan_delivery_sales_amount"),
+                    ("business.meituanDeliveryRevenue", "meituan_delivery_revenue"),
+                    ("business.meituanDeliveryRefundAmount", "meituan_delivery_refund_amount"),
+                    ("business.elemeDeliveryGrossSales", "eleme_delivery_sales_amount"),
+                    ("business.elemeDeliveryRevenue", "eleme_delivery_revenue"),
+                    ("business.elemeDeliveryRefundAmount", "eleme_delivery_refund_amount"),
+                    ("business.jdDeliveryGrossSales", "jd_delivery_sales_amount"),
+                    ("business.jdDeliveryRevenue", "jd_delivery_revenue"),
+                    ("business.jdDeliveryRefundAmount", "jd_delivery_refund_amount"),
+                    ("business.pickupGrossSales", "pickup_sales_amount"),
+                    ("business.pickupRevenue", "pickup_revenue"),
+                ],
+            ),
+        ),
+        (
+            "supplemental_pickup",
+            supplemental_aggregates(
+                config,
+                registry,
+                [
+                    ("business.pickupDiscount", "pickup_discount"),
+                    ("business.pickupOrders", "pickup_orders"),
+                    ("business.pickupPositiveOrders", "pickup_positive_orders"),
+                    ("business.pickupRefundAmount", "pickup_refund_amount"),
+                ],
+            ),
+        ),
+    ]
+
+
 def dish_aggregates(config: dict[str, Any], registry: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
     aggregate_specs = [
         ("sum", "dishes.quantity", "dish_quantity"),
@@ -448,6 +532,10 @@ def validate_job(job: dict[str, Any], registry: dict[str, dict[str, Any]], limit
     if is_detail == is_aggregate:
         raise PlanError(f"job {job['id']} must declare exactly one query shape")
     if is_detail:
+        if "filter" in query:
+            filter_field = query["filter"].get("field")
+            if filter_field not in fields or not fields[filter_field]["capabilities"].get("filter"):
+                raise PlanError(f"field {filter_field} lacks filter capability")
         selected = set(query.get("select", []))
         if len(selected) > limits["maxSelectedFields"]:
             raise PlanError(f"job {job['id']} exceeds maxSelectedFields")
@@ -542,7 +630,16 @@ def catalog_job(
     config: dict[str, Any],
     registry: dict[str, dict[str, Any]],
     limits: dict[str, int],
+    coverage: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    snapshot_dates = sorted(
+        source["snapshotDate"]
+        for source in coverage["dish_catalog"].get("sources", [])
+        if isinstance(source, dict) and isinstance(source.get("snapshotDate"), str)
+    )
+    if not snapshot_dates:
+        raise PlanError("dish_catalog coverage has no visible snapshotDate")
+    latest_snapshot = snapshot_dates[-1]
     selected = [
         require_field(config, registry, "dish_catalog.snapshotDate", "sort").canonical,
         require_field(config, registry, "dish_catalog.dishName", "group").canonical,
@@ -556,6 +653,7 @@ def catalog_job(
         "input": {
             "dataset": "dish_catalog",
             "registryVersion": registry["dish_catalog"]["registryVersion"],
+            "filter": {"field": "snapshot_date", "op": "eq", "value": latest_snapshot},
             "select": selected,
             "sort": [
                 {"field": "snapshot_date", "direction": "desc"},
@@ -635,12 +733,14 @@ def build_plan(
     dish_order_category = require_field(config, registry, "dishes.orderCategory", "group").canonical
 
     business_aggs = business_aggregates(config, registry)
+    business_supplemental_sets = business_supplemental_aggregate_sets(config, registry)
     dish_aggs = dish_aggregates(config, registry)
     jobs: list[dict[str, Any]] = []
     notices: list[dict[str, Any]] = []
     trend_windows: dict[str, dict[str, str]] = {}
 
     def add_business(job_id: str, module: str, window_name: str, group_by: list[str], output_file: str) -> None:
+        window = windows[window_name]
         add_if_covered(
             jobs,
             notices,
@@ -650,7 +750,7 @@ def build_plan(
                 module=module,
                 dataset_name="business",
                 registry=registry,
-                window=windows[window_name],
+                window=window,
                 date_field=business_date,
                 group_by=group_by,
                 aggregates=business_aggs,
@@ -658,9 +758,25 @@ def build_plan(
                 limits=limits,
             ),
             datasets=["business"],
-            window=windows[window_name],
+            window=window,
             module=module,
         )
+        if jobs and jobs[-1]["id"] == job_id:
+            for suffix, aggregates in business_supplemental_sets:
+                jobs.append(
+                    aggregate_job(
+                        job_id=f"{job_id}_{suffix}",
+                        module=module,
+                        dataset_name="business",
+                        registry=registry,
+                        window=window,
+                        date_field=business_date,
+                        group_by=group_by,
+                        aggregates=aggregates,
+                        output_file=f"{output_file}_{suffix}",
+                        limits=limits,
+                    )
+                )
 
     for window_name in WINDOW_NAMES:
         if report_type in {"weekly", "monthly"} or window_name == "current":
@@ -740,6 +856,22 @@ def build_plan(
             module=trend_module,
             notice_partial=True,
         )
+        if jobs and jobs[-1]["id"] == trend_id:
+            for suffix, aggregates in business_supplemental_sets:
+                jobs.append(
+                    aggregate_job(
+                        job_id=f"{trend_id}_{suffix}",
+                        module=trend_module,
+                        dataset_name="business",
+                        registry=registry,
+                        window=trend_window,
+                        date_field=business_date,
+                        group_by=trend_group,
+                        aggregates=aggregates,
+                        output_file=f"{trend_id}_{suffix}",
+                        limits=limits,
+                    )
+                )
         if report_type == "monthly":
             prior_window = DateWindow(
                 "prior_year_trend",
@@ -768,6 +900,22 @@ def build_plan(
                 module="monthlyTrend",
                 notice_partial=True,
             )
+            if jobs and jobs[-1]["id"] == "business_6_month_prior_year_store_trend":
+                for suffix, aggregates in business_supplemental_sets:
+                    jobs.append(
+                        aggregate_job(
+                            job_id=f"business_6_month_prior_year_store_trend_{suffix}",
+                            module="monthlyTrend",
+                            dataset_name="business",
+                            registry=registry,
+                            window=prior_window,
+                            date_field=business_date,
+                            group_by=[business_store, business_month],
+                            aggregates=aggregates,
+                            output_file=f"business_6_month_prior_year_store_trend_{suffix}",
+                            limits=limits,
+                        )
+                    )
         add_business(
             "business_current_channel_platform_mix",
             "channelMix",
@@ -807,7 +955,7 @@ def build_plan(
             jobs,
             notices,
             coverage,
-            job=catalog_job(config, registry, limits),
+            job=catalog_job(config, registry, limits, coverage),
             datasets=["dish_catalog"],
             window=None,
             module="stallAttribution",

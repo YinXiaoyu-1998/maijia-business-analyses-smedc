@@ -239,6 +239,56 @@ class AssembleQueryBundleTests(unittest.TestCase):
             self.manifest()["jobs"][1]["input"],
         )
 
+    def test_assembles_manifest_declared_responses_from_documented_run_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            manifest = self.manifest()
+            (run_dir / "registry_response.json").write_text(
+                json.dumps({"datasets": []}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "coverage_business.json").write_text(
+                json.dumps({"dataset": "business"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "coverage_dish_catalog.json").write_text(
+                json.dumps({"dataset": "dish_catalog"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            manifest_path = run_dir / "query_manifest.json"
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+            business_response = run_dir / "query-results" / "business_current_store_totals.json"
+            business_response.parent.mkdir()
+            business_response.write_text(
+                json.dumps(self.aggregate_page(rows=[{"store_name": "荣京道店", "order_revenue": "1000.50"}]), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (run_dir / "query-results" / "dish_catalog_current_snapshot.json").write_text(
+                json.dumps(self.detail_page(rows=[]), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            output = run_dir / "bundle.json"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--manifest",
+                    str(manifest_path),
+                    "--responses-dir",
+                    str(run_dir),
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            bundle = json.loads(output.read_text(encoding="utf-8"))
+            self.assertIn("business_current_store_totals", bundle["resultsByJobId"])
+
     def test_successful_job_assembles_when_module_has_no_partial_policy(self) -> None:
         manifest = self.manifest()
         manifest["jobs"][0]["module"] = "diagnosisModuleWithoutPolicy"
