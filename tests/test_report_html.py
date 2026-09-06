@@ -283,6 +283,29 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("<span>current_open_rate</span><strong>18.0%</strong>", visible_html)
         self.assertNotIn("<span>current_open_rate</span><strong>50.0%</strong>", visible_html)
 
+    def test_weekly_headline_additive_metrics_are_unknown_when_comparison_rows_are_incomplete(self) -> None:
+        bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["business_previous_store_totals"]["rows"] = bundle["resultsByJobId"][
+            "business_previous_store_totals"
+        ]["rows"][:1]
+        bundle["resultsByJobId"]["business_yoy_store_totals"]["rows"] = []
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "bundle.json"
+        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        report_path = output_dir / "incomplete-comparison.html"
+        rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+
+        for label in ("上期实收", "同比期实收", "环比实收差额", "同比实收差额"):
+            self.assertIn(f"<span>{label}</span><strong>暂无</strong>", visible_html)
+            self.assertNotIn(f"<span>{label}</span><strong>0.0</strong>", visible_html)
+
     def test_weekly_headline_open_rate_is_unknown_with_partial_table_day_denominator(self) -> None:
         bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
         bundle["resultsByJobId"]["business_current_store_totals"]["rows"][1].pop("table_days", None)
