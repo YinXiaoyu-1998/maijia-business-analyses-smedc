@@ -33,7 +33,7 @@ def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float | None]:
         "current_customer_count",
         "current_open_rate",
     ]
-    totals: dict[str, float] = {}
+    totals: dict[str, float | None] = {}
     for field in fields:
         if field.endswith("_rate"):
             prefix = field[: -len("_open_rate")] if field.endswith("_open_rate") else field.rsplit("_", 1)[0]
@@ -57,13 +57,18 @@ def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float | None]:
                     denominator_incomplete = True
             totals[field] = round(weighted_sum / denominator, 4) if denominator > 0 and not denominator_incomplete else None
         else:
-            values = []
+            values: list[float] = []
+            incomplete = not rows
             for row in rows:
+                raw_value = row.get(field)
+                if raw_value in {"", None}:
+                    incomplete = True
+                    continue
                 try:
-                    values.append(float(row.get(field) or 0))
-                except ValueError:
-                    values.append(0.0)
-            totals[field] = round(sum(values), 2)
+                    values.append(float(raw_value))
+                except (TypeError, ValueError):
+                    incomplete = True
+            totals[field] = None if incomplete else round(sum(values), 2)
     return totals
 
 
