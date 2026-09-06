@@ -20,12 +20,16 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 class ProfileMonthlyDataTests(unittest.TestCase):
     maxDiff = None
 
-    def run_profile(self) -> tuple[Path, dict]:
+    def run_profile(self, bundle_data: dict | None = None) -> tuple[Path, dict]:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         output_dir = Path(tmp.name)
+        bundle_path = FIXTURE
+        if bundle_data is not None:
+            bundle_path = output_dir / "bundle.json"
+            bundle_path.write_text(json.dumps(bundle_data, ensure_ascii=False, indent=2), encoding="utf-8")
         completed = subprocess.run(
-            [sys.executable, str(SCRIPT), "--bundle", str(FIXTURE), "--output-dir", str(output_dir)],
+            [sys.executable, str(SCRIPT), "--bundle", str(bundle_path), "--output-dir", str(output_dir)],
             cwd=ROOT,
             text=True,
             capture_output=True,
@@ -86,3 +90,34 @@ class ProfileMonthlyDataTests(unittest.TestCase):
                 "monthly_meeting_summary.json",
             },
         )
+
+    def test_monthly_all_store_channel_rates_are_blank_when_denominator_is_partial(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["business_current_channel_platform_mix"]["rows"] = [
+            {
+                "store_name": "荣京道店",
+                "order_category": "店内销售",
+                "order_source": "收银",
+                "dining_method": "堂食",
+                "order_revenue": "9000",
+                "table_days": "1",
+                "weighted_open_rate": "0.90",
+                "weighted_turnover_rate": "4.00",
+            },
+            {
+                "store_name": "龙玥城店",
+                "order_category": "店内销售",
+                "order_source": "收银",
+                "dining_method": "堂食",
+                "order_revenue": "1000",
+                "weighted_open_rate": "0.10",
+                "weighted_turnover_rate": "1.00",
+            },
+        ]
+
+        output_dir, _ = self.run_profile(bundle)
+
+        channel_rows = read_csv(output_dir / "monthly_store_channel_metrics.csv")
+        all_store = next(row for row in channel_rows if row["门店名称"] == "全体门店" and row["channel"] == "店内销售 / 收银")
+        self.assertEqual(all_store["open_rate"], "")
+        self.assertEqual(all_store["turnover_rate"], "")

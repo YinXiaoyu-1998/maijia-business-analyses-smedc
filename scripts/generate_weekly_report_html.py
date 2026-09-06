@@ -40,6 +40,7 @@ def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float | None]:
             weight_field = f"{prefix}_table_days"
             weighted_sum = 0.0
             denominator = 0.0
+            denominator_incomplete = False
             for row in rows:
                 if row.get(field) in {"", None}:
                     continue
@@ -47,11 +48,14 @@ def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float | None]:
                     value = float(row.get(field) or 0)
                     weight = float(row.get(weight_field) or 0)
                 except ValueError:
+                    denominator_incomplete = True
                     continue
                 if weight > 0:
                     weighted_sum += value * weight
                     denominator += weight
-            totals[field] = round(weighted_sum / denominator, 4) if denominator > 0 else None
+                else:
+                    denominator_incomplete = True
+            totals[field] = round(weighted_sum / denominator, 4) if denominator > 0 and not denominator_incomplete else None
         else:
             values = []
             for row in rows:

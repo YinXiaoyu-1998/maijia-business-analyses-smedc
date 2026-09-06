@@ -329,6 +329,8 @@ def aggregate_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     weighted_turnover = Decimal("0")
     open_denominator = Decimal("0")
     turnover_denominator = Decimal("0")
+    open_denominator_incomplete = False
+    turnover_denominator_incomplete = False
     count = 0
     for row in rows:
         count += 1
@@ -338,18 +340,24 @@ def aggregate_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 present.add(source_key)
         weight = optional_dec(row, "table_days")
         valid_weight = weight is not None and weight > 0
-        if valid_weight and has_number(row, "weighted_open_rate"):
-            weighted_open += dec(row.get("weighted_open_rate")) * weight
-            open_denominator += weight
-        if valid_weight and has_number(row, "weighted_turnover_rate"):
-            weighted_turnover += dec(row.get("weighted_turnover_rate")) * weight
-            turnover_denominator += weight
+        if has_number(row, "weighted_open_rate"):
+            if valid_weight:
+                weighted_open += dec(row.get("weighted_open_rate")) * weight
+                open_denominator += weight
+            else:
+                open_denominator_incomplete = True
+        if has_number(row, "weighted_turnover_rate"):
+            if valid_weight:
+                weighted_turnover += dec(row.get("weighted_turnover_rate")) * weight
+                turnover_denominator += weight
+            else:
+                turnover_denominator_incomplete = True
     for key in present:
         source[key] = sums[key]
     source["rows"] = count
-    if open_denominator:
+    if open_denominator and not open_denominator_incomplete:
         source["weighted_open_rate"] = weighted_open / open_denominator
-    if turnover_denominator:
+    if turnover_denominator and not turnover_denominator_incomplete:
         source["weighted_turnover_rate"] = weighted_turnover / turnover_denominator
     return dict(source)
 

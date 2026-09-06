@@ -145,3 +145,34 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
         beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
         self.assertEqual(beef["档口"], "面档")
+
+    def test_weekly_all_store_channel_rates_are_blank_when_denominator_is_partial(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["business_current_channel_platform_mix"]["rows"] = [
+            {
+                "store_name": "荣京道店",
+                "order_category": "店内销售",
+                "order_source": "收银",
+                "dining_method": "堂食",
+                "order_revenue": "9000",
+                "table_days": "1",
+                "weighted_open_rate": "0.90",
+                "weighted_turnover_rate": "4.00",
+            },
+            {
+                "store_name": "龙玥城店",
+                "order_category": "店内销售",
+                "order_source": "收银",
+                "dining_method": "堂食",
+                "order_revenue": "1000",
+                "weighted_open_rate": "0.10",
+                "weighted_turnover_rate": "1.00",
+            },
+        ]
+
+        output_dir, _ = self.run_profile(bundle)
+
+        channel_rows = read_csv(output_dir / "weekly_store_channel_metrics.csv")
+        all_store = next(row for row in channel_rows if row["门店名称"] == "全体门店" and row["channel"] == "店内销售 / 收银")
+        self.assertEqual(all_store["open_rate"], "")
+        self.assertEqual(all_store["turnover_rate"], "")

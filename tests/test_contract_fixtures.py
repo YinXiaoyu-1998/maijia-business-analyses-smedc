@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -8,9 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
-AUTHORITATIVE_SERVICE_REPO = Path(
-    "/Users/xiaoyuyin/Desktop/YXY_DEV/SME_DATA_CENTER-worktrees/maijia-smedc-reporting"
-)
+REGISTRY_TOOL = ROOT / "scripts" / "registry_fixture_tool.py"
 SCOPED_DATASETS = ("business", "dishes", "dish_catalog")
 
 
@@ -52,53 +52,29 @@ class ContractFixtureTests(unittest.TestCase):
                 self.assertLessEqual(set(fields.values()), registry_fields[dataset_name])
 
     def test_registry_fixture_matches_authoritative_current_registries(self) -> None:
-        if not AUTHORITATIVE_SERVICE_REPO.exists():
-            self.skipTest(f"authoritative service repo not available: {AUTHORITATIVE_SERVICE_REPO}")
-        script = """
-import { STRUCTURED_DATASET_REGISTRIES } from './packages/domain/src/structured-registry.ts';
-import { STRUCTURED_QUERY_LIMITS } from './packages/domain/src/structured-query.ts';
-const scoped = ['business', 'dishes', 'dish_catalog'];
-const fieldResponse = (field) => ({
-  canonicalName: field.canonicalName,
-  sourceColumn: field.sourceColumn,
-  aliases: field.aliases,
-  type: field.type,
-  nullable: field.nullable,
-  sensitivity: field.sensitivity,
-  lifecycle: field.lifecycle,
-  volatility: field.volatility,
-  defaultReturn: field.defaultReturn,
-  operators: field.operators,
-  capabilities: field.capabilities,
-  indexStatus: field.indexStatus,
-  ...(field.valueLimits === undefined ? {} : { valueLimits: field.valueLimits }),
-  storage: field.storage,
-});
-const payload = {
-  limits: STRUCTURED_QUERY_LIMITS,
-  datasets: scoped.map((dataset) => {
-    const registry = STRUCTURED_DATASET_REGISTRIES[dataset];
-    return {
-      dataset: registry.dataset,
-      registryVersion: registry.version,
-      rowTable: registry.rowTable,
-      fields: registry.fields.map(fieldResponse),
-    };
-  }),
-};
-console.log(JSON.stringify(payload));
-"""
+        service_repo = os.environ.get("SME_DATA_CENTER_REPO")
+        if not service_repo:
+            self.skipTest("set SME_DATA_CENTER_REPO to run exact cross-repo registry parity")
         completed = subprocess.run(
-            ["npx", "tsx", "-e", script],
-            cwd=AUTHORITATIVE_SERVICE_REPO,
+            [sys.executable, str(REGISTRY_TOOL), "check", "--service-repo", service_repo],
+            cwd=ROOT,
             text=True,
             capture_output=True,
-            check=True,
         )
-        expected = json.loads(completed.stdout)
-        registry = self.load_json("tests/fixtures/registry_response.json")
 
-        self.assertEqual(registry, expected)
+        self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+
+    def test_registry_fixture_tool_documents_portable_service_repo_selection(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(REGISTRY_TOOL), "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--service-repo", completed.stdout)
+        self.assertIn("SME_DATA_CENTER_REPO", completed.stdout)
 
     def test_registry_fixture_is_full_for_skill_datasets(self) -> None:
         registry = self.load_json("tests/fixtures/registry_response.json")

@@ -52,7 +52,7 @@ coverage 缺口或可选 job 失败应生成带 notice 的 partial report，不�
 ## 当前合同文件
 
 - `config/maijia.json` 定义 schema version `1`、canonical datasets、麦家门店分组、语义字段映射、报表模块和查询限制。
-- `tests/fixtures/registry_response.json` 是合成的 `list_structured_datasets` 响应 envelope。
+- `tests/fixtures/registry_response.json` 是报表合同所需的完整 `list_structured_datasets` 响应 envelope，覆盖当前 `business`、`dishes`、`dish_catalog` 的全部 canonical fields。
 - `tests/fixtures/coverage_business.json`、`tests/fixtures/coverage_dishes.json`、`tests/fixtures/coverage_dish_catalog.json` 是合成的 `describe_structured_dataset_coverage` 响应 envelope。
 
 所有 fixture 中的公司、文档、导入批次和门店名称均为合成数据，只供后续 query-plan 与 bundle-validation 测试使用，不代表生产数据。
@@ -84,4 +84,12 @@ python3 scripts/assemble_query_bundle.py --help
 python3 scripts/run_business_report.py --help
 python3 scripts/run_weekly_report.py --help
 python3 scripts/run_monthly_report.py --help
+```
+
+维护者可以将 registry fixture 与本地 Enterprise Hub 服务仓库的当前定义进行校验或同步；这不会为普通报表用户增加任何运行时依赖：
+
+```bash
+python3 scripts/registry_fixture_tool.py check --service-repo /path/to/SME_DATA_CENTER
+python3 scripts/registry_fixture_tool.py refresh --service-repo /path/to/SME_DATA_CENTER
+SME_DATA_CENTER_REPO=/path/to/SME_DATA_CENTER python3 -m unittest tests.test_contract_fixtures.ContractFixtureTests.test_registry_fixture_matches_authoritative_current_registries -v
 ```

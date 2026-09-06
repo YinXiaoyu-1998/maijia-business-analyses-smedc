@@ -52,7 +52,7 @@ Missing coverage or failed optional jobs should become partial reports with visi
 ## Current Contract Files
 
 - `config/maijia.json` defines schema version `1`, canonical datasets, Maijia store buckets, semantic field mappings, report modules, and query limits.
-- `tests/fixtures/registry_response.json` is a synthetic `list_structured_datasets` envelope for the reporting contract.
+- `tests/fixtures/registry_response.json` is the full scoped `list_structured_datasets` envelope for the reporting contract, covering every current `business`, `dishes`, and `dish_catalog` canonical field.
 - `tests/fixtures/coverage_business.json`, `tests/fixtures/coverage_dishes.json`, and `tests/fixtures/coverage_dish_catalog.json` are synthetic `describe_structured_dataset_coverage` envelopes.
 
 The fixtures use only synthetic company, document, import, and store names. They are meant for future query-plan and bundle-validation tests, not as production data.
@@ -84,4 +84,12 @@ python3 scripts/assemble_query_bundle.py --help
 python3 scripts/run_business_report.py --help
 python3 scripts/run_weekly_report.py --help
 python3 scripts/run_monthly_report.py --help
+```
+
+Maintainers can check or refresh the registry fixture against a local Enterprise Hub service checkout without adding any runtime dependency for report users:
+
+```bash
+python3 scripts/registry_fixture_tool.py check --service-repo /path/to/SME_DATA_CENTER
+python3 scripts/registry_fixture_tool.py refresh --service-repo /path/to/SME_DATA_CENTER
+SME_DATA_CENTER_REPO=/path/to/SME_DATA_CENTER python3 -m unittest tests.test_contract_fixtures.ContractFixtureTests.test_registry_fixture_matches_authoritative_current_registries -v
 ```

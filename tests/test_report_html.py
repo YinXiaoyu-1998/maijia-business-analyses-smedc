@@ -283,10 +283,9 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("<span>current_open_rate</span><strong>18.0%</strong>", visible_html)
         self.assertNotIn("<span>current_open_rate</span><strong>50.0%</strong>", visible_html)
 
-    def test_weekly_headline_open_rate_is_unknown_without_table_day_denominator(self) -> None:
+    def test_weekly_headline_open_rate_is_unknown_with_partial_table_day_denominator(self) -> None:
         bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
-        for row in bundle["resultsByJobId"]["business_current_store_totals"]["rows"]:
-            row.pop("table_days", None)
+        bundle["resultsByJobId"]["business_current_store_totals"]["rows"][1].pop("table_days", None)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         output_dir = Path(tmp.name)
@@ -301,12 +300,11 @@ class ReportHtmlTests(unittest.TestCase):
         visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
 
         self.assertIn("<span>current_open_rate</span><strong>暂无</strong>", visible_html)
-        self.assertNotIn("<span>current_open_rate</span><strong>54.0%</strong>", visible_html)
+        self.assertNotIn("<span>current_open_rate</span><strong>62.5%</strong>", visible_html)
 
-    def test_monthly_headline_open_rate_is_unknown_with_zero_table_day_denominator(self) -> None:
+    def test_monthly_headline_open_rate_is_unknown_with_partial_zero_table_day_denominator(self) -> None:
         bundle = json.loads((FIXTURES / "monthly_bundle.json").read_text(encoding="utf-8"))
-        for row in bundle["resultsByJobId"]["business_current_store_totals"]["rows"]:
-            row["table_days"] = "0"
+        bundle["resultsByJobId"]["business_current_store_totals"]["rows"][1]["table_days"] = "0"
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         output_dir = Path(tmp.name)
@@ -321,7 +319,7 @@ class ReportHtmlTests(unittest.TestCase):
         visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
 
         self.assertIn("<span>current_open_rate</span><strong>暂无</strong>", visible_html)
-        self.assertNotIn("<span>current_open_rate</span><strong>53.5%</strong>", visible_html)
+        self.assertNotIn("<span>current_open_rate</span><strong>61.0%</strong>", visible_html)
 
     def test_runners_profile_render_and_print_final_json(self) -> None:
         tmp = tempfile.TemporaryDirectory()

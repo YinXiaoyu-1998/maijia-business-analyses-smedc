@@ -151,7 +151,7 @@ class ProfileBusinessDataTests(unittest.TestCase):
         self.assertIsNone(fact["open_rate"])
         self.assertIsNone(fact["turnover_rate"])
 
-    def test_cross_row_rate_rollups_ignore_rows_without_positive_table_days(self) -> None:
+    def test_cross_row_rate_rollups_are_unknown_when_any_rated_row_lacks_positive_table_days(self) -> None:
         source = aggregate_rows(
             [
                 {"order_revenue": "100", "weighted_open_rate": "0.90", "weighted_turnover_rate": "4.00"},
@@ -163,10 +163,16 @@ class ProfileBusinessDataTests(unittest.TestCase):
         fact = metric_row(source)
 
         self.assertEqual(fact["net_revenue"], 600.0)
-        self.assertEqual(fact["open_rate"], 0.25)
-        self.assertEqual(fact["turnover_rate"], 2.0)
+        self.assertIsNone(fact["open_rate"])
+        self.assertIsNone(fact["turnover_rate"])
 
-    def test_diagnosis_group_rollups_leave_rates_blank_when_denominator_is_missing(self) -> None:
+    def test_direct_service_returned_rate_grain_does_not_require_table_days(self) -> None:
+        fact = metric_row({"weighted_open_rate": "0.90", "weighted_turnover_rate": "4.00"})
+
+        self.assertEqual(fact["open_rate"], 0.9)
+        self.assertEqual(fact["turnover_rate"], 4.0)
+
+    def test_diagnosis_group_rollups_leave_rates_blank_when_denominator_is_partial(self) -> None:
         bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
         bundle["resultsByJobId"]["business_current_channel_platform_mix"]["rows"] = [
             {
@@ -175,6 +181,7 @@ class ProfileBusinessDataTests(unittest.TestCase):
                 "order_source": "收银",
                 "dining_method": "堂食",
                 "order_revenue": "9000",
+                "table_days": "1",
                 "weighted_open_rate": "0.90",
                 "weighted_turnover_rate": "4.00",
             },
