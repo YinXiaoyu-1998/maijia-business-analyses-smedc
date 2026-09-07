@@ -33,7 +33,11 @@ def presentation_payload(payload: dict[str, Any]) -> dict[str, Any]:
             return [scrub(item) for item in value]
         return value
 
-    return public_payload(scrub(payload))
+    result = public_payload(scrub(payload))
+    if not result.get("availability", {}).get("current"):
+        period = "本月" if result.get("meta", {}).get("report_grain") == "month" else "本周"
+        result["data_gaps"] = [f"{period}暂无可用经营数据，经营指标与分析板块未展示。"]
+    return result
 
 
 def inject_missing_data_notice(html: str, messages: list[str]) -> str:
@@ -51,6 +55,7 @@ def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
     summary_path = input_dir / "weekly_meeting_summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     payload = build_payload(input_dir, "麦家小馆")
+    report_payload = presentation_payload(payload)
     html = HTML_TEMPLATE.replace("__TITLE__", str(payload["meta"]["title"]))
     html = html.replace(
         '<script id="payload" type="application/json">',
@@ -59,9 +64,9 @@ def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
     html = html.replace("getElementById('payload')", "getElementById('report-data')")
     html = html.replace(
         "__PAYLOAD__",
-        json.dumps(presentation_payload(payload), ensure_ascii=False).replace("<", "\\u003c").replace("&", "\\u0026"),
+        json.dumps(report_payload, ensure_ascii=False).replace("<", "\\u003c").replace("&", "\\u0026"),
     )
-    html = inject_missing_data_notice(html, list(payload.get("data_gaps", [])))
+    html = inject_missing_data_notice(html, list(report_payload.get("data_gaps", [])))
     html = accessible_html(html)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(html, encoding="utf-8")

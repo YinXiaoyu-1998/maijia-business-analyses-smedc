@@ -299,8 +299,8 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertFalse(payload["stall_sales_mix"]["enabled"])
         self.assertFalse(payload["product_sales_per_10k_order_revenue"]["enabled"])
         visible_html = strip_embedded_scripts(html)
-        self.assertIn("缺少本期营业数据，本期经营分析未展示。", visible_html)
-        self.assertIn("缺少历史营业数据，趋势图未展示。", visible_html)
+        self.assertIn("本周暂无可用经营数据，经营指标与分析板块未展示。", visible_html)
+        self.assertNotIn("缺少历史营业数据，趋势图未展示。", visible_html)
         self.assertNotIn("COVERAGE_", html)
         self.assertNotIn("business_current_store_totals", html)
 
@@ -328,8 +328,8 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertFalse(payload["stall_sales_mix"]["enabled"])
         self.assertFalse(payload["product_sales_per_10k_order_revenue"]["enabled"])
         visible_html = strip_embedded_scripts(html)
-        self.assertIn("缺少本期营业数据，本期经营分析未展示。", visible_html)
-        self.assertIn("缺少历史营业数据，趋势图未展示。", visible_html)
+        self.assertIn("本月暂无可用经营数据，经营指标与分析板块未展示。", visible_html)
+        self.assertNotIn("缺少历史营业数据，趋势图未展示。", visible_html)
         self.assertNotIn("COVERAGE_", html)
         self.assertNotIn("business_current_store_totals", html)
 
