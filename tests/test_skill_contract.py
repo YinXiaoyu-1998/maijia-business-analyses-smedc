@@ -18,9 +18,9 @@ class SkillContractTests(unittest.TestCase):
         self.assertRegex(self.skill_text, r"(?s)^---\n.*name: maijia-business-analyses-smedc\n")
         self.assertRegex(self.skill_text, r"(?m)^description: Use when .+Maijia.+Enterprise Hub")
         self.assertIn("**REQUIRED SUB-SKILL:** Use enterprise-hub-mcp", self.skill_text)
-        self.assertIn("enterprise-hub-mcp-launcher@0.2.6", self.skill_text)
-        self.assertIn("enterprise-hub-mcp-launcher@0.2.6", self.readme_text)
-        self.assertIn("enterprise-hub-mcp-launcher@0.2.6", self.readme_zh_text)
+        self.assertIn("enterprise-hub-mcp-launcher@0.2.7", self.skill_text)
+        self.assertIn("enterprise-hub-mcp-launcher@0.2.7", self.readme_text)
+        self.assertIn("enterprise-hub-mcp-launcher@0.2.7", self.readme_zh_text)
         self.assertIn("$maijia-business-analyses-smedc", self.openai_yaml_text)
         self.assertIn("diagnosis", self.openai_yaml_text)
 
@@ -30,7 +30,7 @@ class SkillContractTests(unittest.TestCase):
                 self.assertIn("~/.agents/skills/maijia-business-analyses-smedc", text)
                 self.assertIn("YinXiaoyu-1998/maijia-business-analyses-smedc", text)
                 self.assertIn("enterprise-hub-mcp-skill", text)
-                self.assertIn("enterprise-hub-mcp-launcher@0.2.6", text)
+                self.assertIn("enterprise-hub-mcp-launcher@0.2.7", text)
                 self.assertNotIn("/Users/xiaoyuyin/.agents/skills", text)
                 self.assertIsNone(re.search(r"npm install .*enterprise-hub-mcp-launcher", text))
 

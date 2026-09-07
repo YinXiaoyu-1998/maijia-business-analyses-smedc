@@ -4,11 +4,11 @@ Enterprise Hub-backed reporting skill for Maijia operating reports.
 
 This repository adapts the report presentation and interactions from the original [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill while replacing local workbook reads with Enterprise Hub queries. It is released by the copyright holder under this repository's MIT license; see [LICENSE](LICENSE).
 
-This skill uses `enterprise-hub-mcp-launcher@0.2.6` and the authenticated Enterprise Hub MCP tools for structured dataset registry, coverage, and query access.
+This skill uses `enterprise-hub-mcp-launcher@0.2.7` and the authenticated Enterprise Hub MCP tools for structured dataset registry, coverage, and query access.
 
 ## Installation
 
-Prerequisite: install and use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. This reporting skill requires `enterprise-hub-mcp-launcher@0.2.6`, but launcher installation and authentication are delegated to the prerequisite skill.
+Prerequisite: install and use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. This reporting skill requires `enterprise-hub-mcp-launcher@0.2.7`, but launcher installation and authentication are delegated to the prerequisite skill.
 
 Install this reporting skill in the cross-runtime user skills directory:
 
