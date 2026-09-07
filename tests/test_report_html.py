@@ -113,7 +113,8 @@ class ReportHtmlTests(unittest.TestCase):
         )
 
         assert_self_contained(self, html)
-        self.assertIn("麦家小馆周会经营报告", html)
+        self.assertIn("<h1>麦家小馆周经营会报</h1>", html)
+        self.assertNotIn("麦家小馆周会经营报告", html)
         self.assertIn("2026-07-20", html)
         self.assertIn("2026-07-26", html)
         self.assertIn("趋势", html)
@@ -144,7 +145,8 @@ class ReportHtmlTests(unittest.TestCase):
         )
 
         assert_self_contained(self, html)
-        self.assertIn("麦家小馆月会经营报告", html)
+        self.assertIn("<h1>麦家小馆月经营会报</h1>", html)
+        self.assertNotIn("麦家小馆月会经营报告", html)
         self.assertIn("2026-07-01", html)
         self.assertIn("2026-07-31", html)
         self.assertIn("2025-07-01", html)

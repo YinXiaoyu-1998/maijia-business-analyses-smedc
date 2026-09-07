@@ -18,7 +18,6 @@ def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     payload = build_payload(input_dir, "麦家小馆")
     html = monthly_template().replace("__TITLE__", str(payload["meta"]["title"]))
-    html = html.replace("麦家小馆月经营会报", "麦家小馆月会经营报告")
     html = html.replace(
         '<script id="payload" type="application/json">',
         '<script type="application/json" id="report-data">',
