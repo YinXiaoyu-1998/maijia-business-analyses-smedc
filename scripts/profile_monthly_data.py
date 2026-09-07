@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from calendar import monthrange
 from pathlib import Path
@@ -34,6 +35,20 @@ from report_common import (
 PERIOD_LABELS = {"current": "本月", "previous": "上月", "yoy": "去年同月"}
 
 
+def normalize_business_month(value: Any) -> tuple[str, str | None, str | None]:
+    raw_label = str(value or "").strip()
+    match = re.fullmatch(r"(\d{4})[-/](\d{1,2})", raw_label)
+    if match is None:
+        return raw_label or "未知月", None, None
+
+    year, month = (int(part) for part in match.groups())
+    if not 1 <= month <= 12:
+        return raw_label, None, None
+
+    month_label = f"{year:04d}-{month:02d}"
+    return month_label, f"{month_label}-01", f"{month_label}-{monthrange(year, month)[1]:02d}"
+
+
 def comparison_fieldnames() -> list[str]:
     fields = ["门店名称", "store_size_bucket", "store_segment"]
     for prefix in ["current", "previous", "yoy"]:
@@ -52,7 +67,7 @@ def trend_rows(bundle: dict[str, Any]) -> list[dict[str, Any]]:
         ("business_6_month_store_trend", "current_year"),
     ):
         for source in rows_for(bundle, job_id):
-            month_label = str(source.get("business_month") or "未知月")
+            month_label, month_start, month_end = normalize_business_month(source.get("business_month"))
             rows.extend(
                 store_metric_rows(
                     [source],
@@ -60,8 +75,8 @@ def trend_rows(bundle: dict[str, Any]) -> list[dict[str, Any]]:
                         "series_key": series_key,
                         "series_label": month_label[:4],
                         "window_index": None,
-                        "month_start": f"{month_label}-01" if len(month_label) == 7 else None,
-                        "month_end": None,
+                        "month_start": month_start,
+                        "month_end": month_end,
                         "month_label": month_label,
                     },
                 )
@@ -73,10 +88,6 @@ def trend_rows(bundle: dict[str, Any]) -> list[dict[str, Any]]:
             if row["series_key"] != series_key:
                 continue
             row["window_index"] = indexes[row["month_label"]]
-            label = str(row["month_label"])
-            if len(label) == 7:
-                year, month = (int(part) for part in label.split("-"))
-                row["month_end"] = f"{label}-{monthrange(year, month)[1]:02d}"
     rows.sort(key=lambda item: (item["window_index"], item["series_key"], item["门店名称"]))
     return rows
 

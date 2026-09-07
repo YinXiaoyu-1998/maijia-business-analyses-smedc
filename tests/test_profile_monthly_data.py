@@ -98,6 +98,28 @@ class ProfileMonthlyDataTests(unittest.TestCase):
             },
         )
 
+    def test_normalizes_slash_separated_business_months(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        for job_id in (
+            "business_6_month_prior_year_store_trend",
+            "business_6_month_store_trend",
+        ):
+            for row in bundle["resultsByJobId"][job_id]["rows"]:
+                row["business_month"] = row["business_month"].replace("-", "/")
+
+        output_dir, _ = self.run_profile(bundle)
+
+        trend = read_csv(output_dir / "monthly_trend_comparison_metrics.csv")
+        self.assertEqual(
+            {(row["series_key"], row["month_label"], row["month_start"], row["month_end"]) for row in trend},
+            {
+                ("prior_year", "2025-06", "2025-06-01", "2025-06-30"),
+                ("prior_year", "2025-07", "2025-07-01", "2025-07-31"),
+                ("current_year", "2026-06", "2026-06-01", "2026-06-30"),
+                ("current_year", "2026-07", "2026-07-01", "2026-07-31"),
+            },
+        )
+
     def test_monthly_all_store_channel_rates_are_blank_when_denominator_is_partial(self) -> None:
         bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
         bundle["resultsByJobId"]["business_current_channel_platform_mix"]["rows"] = [
