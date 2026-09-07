@@ -15,7 +15,6 @@
   "datasets": [
     {
       "dataset": "business",
-      "registryVersion": "business.2026-09-04.v2",
       "rowTable": "business_rows",
       "fields": [
         {
@@ -5604,7 +5603,6 @@
     },
     {
       "dataset": "dishes",
-      "registryVersion": "dishes.2026-09-04.v2",
       "rowTable": "dish_rows",
       "fields": [
         {
@@ -7452,7 +7450,6 @@
     },
     {
       "dataset": "dish_catalog",
-      "registryVersion": "dish_catalog.2026-08-22.v1",
       "rowTable": "dish_catalog_rows",
       "fields": [
         {

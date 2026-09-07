@@ -17,19 +17,16 @@
     "business": {
       "dataset": "business",
       "metadataPolicy": "window",
-      "registryVersionSource": "list_structured_datasets",
       "requiredFor": ["coreBusiness", "weeklyTrend", "monthlyTrend", "channelMix", "daypartAttribution", "stallSalesMix", "productSalesPer10k"]
     },
     "dishes": {
       "dataset": "dishes",
       "metadataPolicy": "window",
-      "registryVersionSource": "list_structured_datasets",
       "requiredFor": ["stallAttribution", "stallSalesMix", "productSalesPer10k"]
     },
     "dish_catalog": {
       "dataset": "dish_catalog",
       "metadataPolicy": "snapshot",
-      "registryVersionSource": "list_structured_datasets",
       "requiredFor": ["stallAttribution", "stallSalesMix", "productSalesPer10k"]
     }
   },

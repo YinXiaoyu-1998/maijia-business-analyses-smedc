@@ -55,7 +55,6 @@ const payload = {{
     const registry = STRUCTURED_DATASET_REGISTRIES[dataset];
     return {{
       dataset: registry.dataset,
-      registryVersion: registry.version,
       rowTable: registry.rowTable,
       fields: registry.fields.map(fieldResponse),
     }};

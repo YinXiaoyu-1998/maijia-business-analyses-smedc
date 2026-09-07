@@ -55,12 +55,19 @@ class ProfileMonthlyDataTests(unittest.TestCase):
         self.assertEqual(by_store["龙玥城店"]["store_size_bucket"], "小店")
 
         trend = read_csv(output_dir / "monthly_trend_comparison_metrics.csv")
-        self.assertEqual(trend[0]["month_label"], "2025-06")
-        self.assertEqual(trend[0]["series_key"], "prior_year")
-        self.assertEqual(trend[-1]["month_label"], "2026-07")
+        series_and_months = {(row["series_key"], row["month_label"]) for row in trend}
+        self.assertEqual(
+            series_and_months,
+            {
+                ("prior_year", "2025-06"),
+                ("prior_year", "2025-07"),
+                ("current_year", "2026-06"),
+                ("current_year", "2026-07"),
+            },
+        )
 
         daypart_drivers = read_csv(output_dir / "monthly_store_daypart_driver_summary.csv")
-        self.assertEqual(daypart_drivers[0]["top_current_time_slot"], "12:00")
+        self.assertEqual(daypart_drivers[0]["top_positive_time_slot"], "12:00")
 
         product_rows = read_csv(output_dir / "monthly_store_product_sales_per_10k.csv")
         beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
@@ -79,7 +86,7 @@ class ProfileMonthlyDataTests(unittest.TestCase):
                 "monthly_store_stall_metrics.csv",
                 "monthly_store_stall_comparison.csv",
                 "monthly_store_stall_driver_summary.csv",
-                "monthly_store_stall_dish_driver_detail.csv",
+                "monthly_store_stall_dish_drivers.csv",
                 "dish_catalog_match_summary.csv",
                 "monthly_store_stall_sales_mix.csv",
                 "monthly_store_product_sales_per_10k.csv",

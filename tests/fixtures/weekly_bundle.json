@@ -8,13 +8,9 @@
       "yoy": {"start": "2025-07-21", "end": "2025-07-27"}
     },
     "trendWindows": {
-      "current": {"start": "2026-04-06", "end": "2026-07-26"}
+      "current": {"start": "2026-04-06", "end": "2026-07-26"},
+      "priorYear": {"start": "2025-04-06", "end": "2025-07-26"}
     }
-  },
-  "registryVersions": {
-    "business": "business.2026-09-04.v2",
-    "dishes": "dishes.2026-09-04.v2",
-    "dish_catalog": "dish_catalog.2026-08-22.v1"
   },
   "coverage": {},
   "notices": [
@@ -28,20 +24,20 @@
   "resultsByJobId": {
     "business_current_store_totals": {
       "rows": [
-        {"store_name": "荣京道店", "gross_sales": "12500", "order_revenue": "10000", "discount": "2500", "positive_orders": "500", "diners": "620", "consumed_tables": "280", "member_revenue": "3000", "table_days": "280", "weighted_open_rate": "0.625", "weighted_turnover_rate": "2.10"},
-        {"store_name": "龙玥城店", "gross_sales": "6250", "order_revenue": "5000", "discount": "1250", "positive_orders": "250", "diners": "330", "consumed_tables": "150", "member_revenue": "1500", "table_days": "150", "weighted_open_rate": "0.455", "weighted_turnover_rate": "1.60"}
+        {"store_name": "荣京道店", "gross_sales": "12500", "order_revenue": "10000", "discount": "2500", "positive_orders": "500", "diners": "620", "consumed_tables": "280", "member_revenue": "3000", "dine_in_revenue": "6000", "delivery_revenue": "4000", "meituan_delivery_revenue": "4000", "table_days": "280", "weighted_open_rate": "0.625", "weighted_turnover_rate": "2.10"},
+        {"store_name": "龙玥城店", "gross_sales": "6250", "order_revenue": "5000", "discount": "1250", "positive_orders": "250", "diners": "330", "consumed_tables": "150", "member_revenue": "1500", "dine_in_revenue": "3000", "delivery_revenue": "2000", "eleme_delivery_revenue": "2000", "table_days": "150", "weighted_open_rate": "0.455", "weighted_turnover_rate": "1.60"}
       ]
     },
     "business_previous_store_totals": {
       "rows": [
-        {"store_name": "荣京道店", "gross_sales": "10000", "order_revenue": "8000", "discount": "2000", "positive_orders": "400", "diners": "540", "consumed_tables": "250", "member_revenue": "2400", "table_days": "250", "weighted_open_rate": "0.500", "weighted_turnover_rate": "1.90"},
-        {"store_name": "龙玥城店", "gross_sales": "8750", "order_revenue": "7000", "discount": "1750", "positive_orders": "350", "diners": "410", "consumed_tables": "180", "member_revenue": "2100", "table_days": "180", "weighted_open_rate": "0.520", "weighted_turnover_rate": "1.80"}
+        {"store_name": "荣京道店", "gross_sales": "10000", "order_revenue": "8000", "discount": "2000", "positive_orders": "400", "diners": "540", "consumed_tables": "250", "member_revenue": "2400", "dine_in_revenue": "5000", "delivery_revenue": "3000", "table_days": "250", "weighted_open_rate": "0.500", "weighted_turnover_rate": "1.90"},
+        {"store_name": "龙玥城店", "gross_sales": "8750", "order_revenue": "7000", "discount": "1750", "positive_orders": "350", "diners": "410", "consumed_tables": "180", "member_revenue": "2100", "dine_in_revenue": "4500", "delivery_revenue": "2500", "table_days": "180", "weighted_open_rate": "0.520", "weighted_turnover_rate": "1.80"}
       ]
     },
     "business_yoy_store_totals": {
       "rows": [
-        {"store_name": "荣京道店", "gross_sales": "11250", "order_revenue": "9000", "discount": "2250", "positive_orders": "450", "diners": "560", "consumed_tables": "260", "member_revenue": "2700", "table_days": "260", "weighted_open_rate": "0.550", "weighted_turnover_rate": "1.95"},
-        {"store_name": "龙玥城店", "gross_sales": "5000", "order_revenue": "4000", "discount": "1000", "positive_orders": "200", "diners": "250", "consumed_tables": "130", "member_revenue": "1200", "table_days": "130", "weighted_open_rate": "0.400", "weighted_turnover_rate": "1.45"}
+        {"store_name": "荣京道店", "gross_sales": "11250", "order_revenue": "9000", "discount": "2250", "positive_orders": "450", "diners": "560", "consumed_tables": "260", "member_revenue": "2700", "dine_in_revenue": "5500", "delivery_revenue": "3500", "table_days": "260", "weighted_open_rate": "0.550", "weighted_turnover_rate": "1.95"},
+        {"store_name": "龙玥城店", "gross_sales": "5000", "order_revenue": "4000", "discount": "1000", "positive_orders": "200", "diners": "250", "consumed_tables": "130", "member_revenue": "1200", "dine_in_revenue": "2500", "delivery_revenue": "1500", "table_days": "130", "weighted_open_rate": "0.400", "weighted_turnover_rate": "1.45"}
       ]
     },
     "business_16_week_store_trend": {
@@ -52,12 +48,36 @@
         {"store_name": "龙玥城店", "business_week": "2026-W30", "gross_sales": "6250", "order_revenue": "5000", "positive_orders": "250", "table_days": "150", "weighted_open_rate": "0.455", "weighted_turnover_rate": "1.60"}
       ]
     },
+    "business_16_week_prior_year_store_trend": {
+      "rows": [
+        {"store_name": "荣京道店", "business_week": "2025-W29", "gross_sales": "9500", "order_revenue": "7600", "positive_orders": "380"},
+        {"store_name": "荣京道店", "business_week": "2025-W30", "gross_sales": "11250", "order_revenue": "9000", "positive_orders": "450"},
+        {"store_name": "龙玥城店", "business_week": "2025-W29", "gross_sales": "4500", "order_revenue": "3600", "positive_orders": "180"},
+        {"store_name": "龙玥城店", "business_week": "2025-W30", "gross_sales": "5000", "order_revenue": "4000", "positive_orders": "200"}
+      ]
+    },
     "business_current_channel_platform_mix": {
       "rows": [
         {"store_name": "荣京道店", "order_category": "店内销售", "order_source": "收银", "dining_method": "堂食", "gross_sales": "7500", "order_revenue": "6000", "positive_orders": "300"},
         {"store_name": "荣京道店", "order_category": "外卖", "order_source": "美团", "dining_method": "外卖", "gross_sales": "5000", "order_revenue": "4000", "positive_orders": "200"},
         {"store_name": "龙玥城店", "order_category": "店内销售", "order_source": "收银", "dining_method": "堂食", "gross_sales": "3750", "order_revenue": "3000", "positive_orders": "150"},
         {"store_name": "龙玥城店", "order_category": "外卖", "order_source": "饿了么", "dining_method": "外卖", "gross_sales": "2500", "order_revenue": "2000", "positive_orders": "100"}
+      ]
+    },
+    "business_previous_channel_platform_mix": {
+      "rows": [
+        {"store_name": "荣京道店", "order_category": "店内销售", "order_source": "收银", "dining_method": "堂食", "gross_sales": "6250", "order_revenue": "5000", "positive_orders": "250"},
+        {"store_name": "荣京道店", "order_category": "外卖", "order_source": "美团", "dining_method": "外卖", "gross_sales": "3750", "order_revenue": "3000", "positive_orders": "150"},
+        {"store_name": "龙玥城店", "order_category": "店内销售", "order_source": "收银", "dining_method": "堂食", "gross_sales": "5625", "order_revenue": "4500", "positive_orders": "225"},
+        {"store_name": "龙玥城店", "order_category": "外卖", "order_source": "饿了么", "dining_method": "外卖", "gross_sales": "3125", "order_revenue": "2500", "positive_orders": "125"}
+      ]
+    },
+    "business_yoy_channel_platform_mix": {
+      "rows": [
+        {"store_name": "荣京道店", "order_category": "店内销售", "order_source": "收银", "dining_method": "堂食", "gross_sales": "6875", "order_revenue": "5500", "positive_orders": "275"},
+        {"store_name": "荣京道店", "order_category": "外卖", "order_source": "美团", "dining_method": "外卖", "gross_sales": "4375", "order_revenue": "3500", "positive_orders": "175"},
+        {"store_name": "龙玥城店", "order_category": "店内销售", "order_source": "收银", "dining_method": "堂食", "gross_sales": "3125", "order_revenue": "2500", "positive_orders": "125"},
+        {"store_name": "龙玥城店", "order_category": "外卖", "order_source": "饿了么", "dining_method": "外卖", "gross_sales": "1875", "order_revenue": "1500", "positive_orders": "75"}
       ]
     },
     "business_current_daypart_mix": {
@@ -68,12 +88,42 @@
         {"store_name": "龙玥城店", "meal_period": "晚餐", "time_slot": "18:00", "gross_sales": "4000", "order_revenue": "3200", "positive_orders": "160"}
       ]
     },
+    "business_previous_daypart_mix": {
+      "rows": [
+        {"store_name": "荣京道店", "meal_period": "午餐", "time_slot": "12:00", "gross_sales": "5500", "order_revenue": "4400", "positive_orders": "220"},
+        {"store_name": "荣京道店", "meal_period": "晚餐", "time_slot": "18:00", "gross_sales": "4500", "order_revenue": "3600", "positive_orders": "180"},
+        {"store_name": "龙玥城店", "meal_period": "午餐", "time_slot": "12:00", "gross_sales": "3750", "order_revenue": "3000", "positive_orders": "150"},
+        {"store_name": "龙玥城店", "meal_period": "晚餐", "time_slot": "18:00", "gross_sales": "5000", "order_revenue": "4000", "positive_orders": "200"}
+      ]
+    },
+    "business_yoy_daypart_mix": {
+      "rows": [
+        {"store_name": "荣京道店", "meal_period": "午餐", "time_slot": "12:00", "gross_sales": "6250", "order_revenue": "5000", "positive_orders": "250"},
+        {"store_name": "荣京道店", "meal_period": "晚餐", "time_slot": "18:00", "gross_sales": "5000", "order_revenue": "4000", "positive_orders": "200"},
+        {"store_name": "龙玥城店", "meal_period": "午餐", "time_slot": "12:00", "gross_sales": "2000", "order_revenue": "1600", "positive_orders": "80"},
+        {"store_name": "龙玥城店", "meal_period": "晚餐", "time_slot": "18:00", "gross_sales": "3000", "order_revenue": "2400", "positive_orders": "120"}
+      ]
+    },
     "dishes_current_product_totals": {
       "rows": [
         {"store_name": "荣京道店", "product_name": "牛肉面", "matched_product_name": "招牌牛肉面", "order_category": "店内销售", "dish_quantity": "120", "dish_revenue": "2400"},
         {"store_name": "荣京道店", "product_name": "鸡腿饭", "matched_product_name": "鸡腿饭", "order_category": "外卖", "dish_quantity": "80", "dish_revenue": "1600"},
         {"store_name": "龙玥城店", "product_name": "牛肉面", "matched_product_name": "招牌牛肉面", "order_category": "店内销售", "dish_quantity": "40", "dish_revenue": "800"},
         {"store_name": "龙玥城店", "product_name": "神秘新品", "matched_product_name": "", "order_category": "外卖", "dish_quantity": "20", "dish_revenue": "400"}
+      ]
+    },
+    "dishes_previous_product_totals": {
+      "rows": [
+        {"store_name": "荣京道店", "product_name": "牛肉面", "matched_product_name": "招牌牛肉面", "order_category": "店内销售", "dish_quantity": "100", "dish_revenue": "2000"},
+        {"store_name": "荣京道店", "product_name": "鸡腿饭", "matched_product_name": "鸡腿饭", "order_category": "外卖", "dish_quantity": "60", "dish_revenue": "1200"},
+        {"store_name": "龙玥城店", "product_name": "牛肉面", "matched_product_name": "招牌牛肉面", "order_category": "店内销售", "dish_quantity": "60", "dish_revenue": "1200"}
+      ]
+    },
+    "dishes_yoy_product_totals": {
+      "rows": [
+        {"store_name": "荣京道店", "product_name": "牛肉面", "matched_product_name": "招牌牛肉面", "order_category": "店内销售", "dish_quantity": "110", "dish_revenue": "2200"},
+        {"store_name": "荣京道店", "product_name": "鸡腿饭", "matched_product_name": "鸡腿饭", "order_category": "外卖", "dish_quantity": "70", "dish_revenue": "1400"},
+        {"store_name": "龙玥城店", "product_name": "牛肉面", "matched_product_name": "招牌牛肉面", "order_category": "店内销售", "dish_quantity": "30", "dish_revenue": "600"}
       ]
     },
     "dish_catalog_current_snapshot": {

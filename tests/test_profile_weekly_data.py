@@ -55,7 +55,7 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         self.assertEqual(by_store["荣京道店"]["wow_net_revenue_delta"], "2000.0")
         self.assertEqual(by_store["荣京道店"]["wow_net_revenue_pct"], "0.25")
         self.assertEqual(by_store["荣京道店"]["open_rate_delta"], "0.125")
-        self.assertEqual(by_store["龙玥城店"]["store_segment"], "修复门店")
+        self.assertEqual(by_store["龙玥城店"]["store_segment"], "高基盘承压")
 
         trend = read_csv(output_dir / "weekly_trend_comparison_metrics.csv")
         self.assertEqual(trend[0]["week_label"], "2026-W29")
@@ -67,16 +67,19 @@ class ProfileWeeklyDataTests(unittest.TestCase):
 
         daypart_drivers = read_csv(output_dir / "weekly_store_daypart_driver_summary.csv")
         self.assertEqual(daypart_drivers[0]["门店名称"], "荣京道店")
-        self.assertEqual(daypart_drivers[0]["top_current_daypart"], "午餐")
-        self.assertEqual(daypart_drivers[1]["top_current_daypart"], "晚餐")
+        self.assertEqual(daypart_drivers[0]["top_positive_daypart"], "午餐")
+        self.assertEqual(daypart_drivers[2]["top_negative_daypart"], "午餐")
 
         stall_mix = read_csv(output_dir / "weekly_store_stall_sales_mix.csv")
         self.assertEqual(stall_mix[0]["档口"], "面档")
         self.assertEqual(stall_mix[0]["stall_income"], "3200.0")
-        self.assertEqual(stall_mix[-1]["档口"], "未匹配")
+        self.assertNotIn("未匹配", {row["档口"] for row in stall_mix})
 
         stall_drivers = read_csv(output_dir / "weekly_store_stall_driver_summary.csv")
-        self.assertEqual([row["门店名称"] for row in stall_drivers], ["全体门店", "荣京道店", "龙玥城店"])
+        self.assertEqual(
+            {(row["门店名称"], row["basis"]) for row in stall_drivers},
+            {("荣京道店", "环比"), ("荣京道店", "同比"), ("龙玥城店", "环比"), ("龙玥城店", "同比")},
+        )
 
         product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
         beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
@@ -84,7 +87,7 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         self.assertEqual(beef["units_per_10k"], "120.0")
         self.assertEqual(beef["units_per_10k_gross_sales"], "96.0")
 
-        product_details = read_csv(output_dir / "weekly_store_stall_dish_driver_detail.csv")
+        product_details = read_csv(output_dir / "weekly_store_stall_dish_drivers.csv")
         self.assertIn("荣京道店", {row["门店名称"] for row in product_details})
         self.assertIn("龙玥城店", {row["门店名称"] for row in product_details})
 

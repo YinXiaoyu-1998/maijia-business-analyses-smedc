@@ -9,13 +9,9 @@
     },
     "trendWindows": {}
   },
-  "registryVersions": {
-    "business": "business.2026-09-04.v2"
-  },
   "coverage": {
     "business": {
       "dataset": "business",
-      "registryVersion": "business.2026-09-04.v2",
       "metadataPolicy": "window",
       "readable": true,
       "sources": [

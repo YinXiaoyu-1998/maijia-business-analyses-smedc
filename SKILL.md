@@ -7,11 +7,11 @@ description: Use when generating Maijia diagnosis, weekly, or monthly operating 
 
 Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meeting reports from Enterprise Hub structured data. The employee-owned agent does the MCP calls; local scripts only validate saved MCP envelopes, derive facts, and render self-contained HTML.
 
-**REQUIRED SUB-SKILL:** Use enterprise-hub-mcp for official current-user Enterprise Hub install, update, repair, and login. This reporting skill depends on `enterprise-hub-mcp-launcher@0.2.6`, but does not duplicate launcher installation mechanics or authentication steps.
+**REQUIRED SUB-SKILL:** Use enterprise-hub-mcp for official current-user Enterprise Hub install, update, repair, and login. This reporting skill depends on `enterprise-hub-mcp-launcher@0.2.7`, but does not duplicate launcher installation mechanics or authentication steps.
 
 ## Boundaries
 
-- Use only `enterprise-hub-mcp-launcher@0.2.6` and an authenticated `enterprise-hub-mcp` session for remote data.
+- Use only `enterprise-hub-mcp-launcher@0.2.7` and an authenticated `enterprise-hub-mcp` session for remote data.
 - Use exactly these Enterprise Hub MCP tools: `list_structured_datasets`, `describe_structured_dataset_coverage`, `query_structured_dataset`.
 - Do not use direct HTTP, service databases, service configuration, or internal storage.
 - Do not handle passwords or tokens. Ask the user to complete login in the official launcher or browser auth flow.
@@ -21,7 +21,7 @@ Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meetin
 
 ## Workflow
 
-1. Use `enterprise-hub-mcp` to install, update, repair, or log in to the official current-user Enterprise Hub MCP launcher. Continue only after the authenticated MCP session exposes the business tools. Record in the handoff that this run used the required `enterprise-hub-mcp-launcher@0.2.6` dependency.
+1. Use `enterprise-hub-mcp` to install, update, repair, or log in to the official current-user Enterprise Hub MCP launcher. Continue only after the authenticated MCP session exposes the business tools. Record in the handoff that this run used the required `enterprise-hub-mcp-launcher@0.2.7` dependency.
 
 2. Create a run directory, for example `runs/2026-09-05-weekly/`, with durable evidence paths:
 
@@ -57,7 +57,7 @@ Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meetin
      --output runs/RUN_ID/query_manifest.json
    ```
 
-   Use `--report-type diagnosis`, `weekly`, or `monthly`. The manifest binds jobs to registry versions from `list_structured_datasets`; never substitute a hard-coded version.
+   Use `--report-type diagnosis`, `weekly`, or `monthly`. The manifest validates every requested field and capability against the current schema returned by `list_structured_datasets`.
 
 6. Call `query_structured_dataset` for every manifest job. Use the job's `input` object exactly as emitted. Save each response under the run directory at `jobs[].outputFile`, usually `query-results/<job-id>.json`.
 
@@ -88,14 +88,16 @@ Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meetin
 
 ## Partial Reports
 
-Data gaps are normal. Build the best partial report supported by the MCP facts and make the limitation visible.
+Data gaps are normal. Always build the best available report, including when every query returns no rows.
 
-- Carry `COVERAGE_WINDOW_PARTIAL`, `COVERAGE_WINDOW_MISSING`, `QUERY_RESPONSE_ERROR`, and `QUERY_RESPONSE_MISSING` notices from manifest or bundle into the final explanation.
+- Hide every chart, table, navigation item, or analysis module that has no supporting facts. Do not render empty technical placeholders.
+- In the HTML and the ordinary user-facing summary, describe omissions only in concise business language, for example “缺少历史营业数据，趋势图未展示。”
+- Never expose coverage tables, source file names, document/import IDs, query job IDs, internal dataset names, transport error codes, or raw MCP errors in the report. Keep those details only in the run artifacts for troubleshooting when explicitly requested.
 - Do not fabricate zeros, fill gaps from old workbooks, or describe missing optional dish/catalog modules as service failures.
-- Tell the user which modules are partial or omitted and why, using the bundle notices and coverage gaps.
+- A partial or empty report is a successful outcome when it honestly reflects the available data.
 
 ## Provenance and Cleanup
 
-Provenance to report back: report type, requested windows, registry versions, coverage sources and gaps, jobs executed, missing/error responses, bundle path, fact directory, and HTML artifact path.
+Ordinary handoff should lead with the HTML report and briefly name any omitted business sections. Do not burden non-technical users with query provenance unless they ask for debugging details.
 
-Keep durable evidence in the run directory: registry, coverage, manifest, raw `query-results/`, bundle, facts, summaries, and report. Clean up only run-scoped scratch that is not needed for audit. Do not delete durable evidence before the user has the report and provenance.
+Keep technical provenance in the run directory: registry, coverage, manifest, raw `query-results/`, bundle, facts, summaries, and report. Clean up only run-scoped scratch that is not needed for audit. Do not delete durable evidence before the user has the report.

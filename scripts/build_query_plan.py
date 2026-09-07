@@ -172,10 +172,9 @@ def registry_by_dataset(registry: dict[str, Any]) -> tuple[dict[str, dict[str, A
         if not isinstance(dataset, dict):
             raise PlanError("malformed registry envelope: dataset entry must be an object")
         name = dataset.get("dataset")
-        version = dataset.get("registryVersion")
         fields = dataset.get("fields")
-        if not isinstance(name, str) or not isinstance(version, str) or not isinstance(fields, list):
-            raise PlanError("malformed registry envelope: dataset requires dataset, registryVersion, fields")
+        if not isinstance(name, str) or not isinstance(fields, list):
+            raise PlanError("malformed registry envelope: dataset requires dataset and fields")
         if name in by_dataset:
             raise PlanError(f"malformed registry envelope: duplicate dataset {name}")
         field_map: dict[str, dict[str, Any]] = {}
@@ -234,8 +233,6 @@ def validate_config_fields(config: dict[str, Any], registry: dict[str, dict[str,
     for dataset_name, dataset_config in config["datasets"].items():
         if dataset_name not in registry:
             raise PlanError(f"registry is missing dataset {dataset_name}")
-        if dataset_config.get("registryVersionSource") != "list_structured_datasets":
-            raise PlanError(f"dataset {dataset_name} must resolve registry version from list_structured_datasets")
         if dataset_config.get("metadataPolicy") not in {"window", "snapshot"}:
             raise PlanError(f"dataset {dataset_name} has unsupported metadata policy")
     for dataset_name, aliases in config["fields"].items():
@@ -259,7 +256,6 @@ def load_coverage(
         if not path.exists():
             coverage[dataset_name] = {
                 "dataset": dataset_name,
-                "registryVersion": registry[dataset_name]["registryVersion"],
                 "metadataPolicy": dataset_config["metadataPolicy"],
                 "sources": [],
                 "readable": False,
@@ -268,7 +264,6 @@ def load_coverage(
         envelope = load_mcp_json(path, "coverage response")
         if (
             envelope.get("dataset") != dataset_name
-            or envelope.get("registryVersion") != registry[dataset_name]["registryVersion"]
             or envelope.get("metadataPolicy") != dataset_config["metadataPolicy"]
             or not isinstance(envelope.get("sources"), list)
         ):
@@ -360,7 +355,6 @@ def source_summaries(coverage: dict[str, Any], windows: dict[str, DateWindow]) -
     dataset_name = coverage["dataset"]
     result: dict[str, Any] = {
         "dataset": dataset_name,
-        "registryVersion": coverage["registryVersion"],
         "metadataPolicy": coverage["metadataPolicy"],
         "readable": bool(coverage.get("readable")),
         "sources": [],
@@ -554,11 +548,8 @@ def validate_job(job: dict[str, Any], registry: dict[str, dict[str, Any]], limit
         raise PlanError(f"job {job['id']} uses unsupported tool {job['tool']}")
     query = job["input"]
     dataset_name = query["dataset"]
-    dataset = registry[dataset_name]
-    fields = dataset["_fields"]
-    if query["registryVersion"] != dataset["registryVersion"]:
-        raise PlanError(f"job {job['id']} uses stale registry version")
-    allowed_query_keys = {"dataset", "registryVersion", "filter", "groupBy", "aggregates", "select", "sort", "page"}
+    fields = registry[dataset_name]["_fields"]
+    allowed_query_keys = {"dataset", "filter", "groupBy", "aggregates", "select", "sort", "page"}
     unknown_keys = set(query) - allowed_query_keys
     if unknown_keys:
         raise PlanError(f"job {job['id']} uses unsupported query keys: {', '.join(sorted(unknown_keys))}")
@@ -647,7 +638,6 @@ def aggregate_job(
         order_by = [{"field": field, "direction": "asc"} for field in group_by[: limits["maxSortFields"]]]
     query: dict[str, Any] = {
         "dataset": dataset_name,
-        "registryVersion": registry[dataset_name]["registryVersion"],
         "groupBy": group_by,
         "aggregates": aggregates,
         "sort": order_by,
@@ -690,7 +680,6 @@ def catalog_job(
         "tool": "query_structured_dataset",
         "input": {
             "dataset": "dish_catalog",
-            "registryVersion": registry["dish_catalog"]["registryVersion"],
             "filter": {"field": "snapshot_date", "op": "eq", "value": latest_snapshot},
             "select": selected,
             "sort": [
@@ -777,8 +766,15 @@ def build_plan(
     notices: list[dict[str, Any]] = []
     trend_windows: dict[str, dict[str, str]] = {}
 
-    def add_business(job_id: str, module: str, window_name: str, group_by: list[str], output_file: str) -> None:
-        window = windows[window_name]
+    def add_business_window(
+        job_id: str,
+        module: str,
+        window: DateWindow,
+        group_by: list[str],
+        output_file: str,
+        *,
+        notice_partial: bool = False,
+    ) -> None:
         add_if_covered(
             jobs,
             notices,
@@ -798,6 +794,7 @@ def build_plan(
             datasets=["business"],
             window=window,
             module=module,
+            notice_partial=notice_partial,
         )
         if jobs and jobs[-1]["id"] == job_id:
             for suffix, aggregates in business_supplemental_sets:
@@ -815,6 +812,9 @@ def build_plan(
                         limits=limits,
                     )
                 )
+
+    def add_business(job_id: str, module: str, window_name: str, group_by: list[str], output_file: str) -> None:
+        add_business_window(job_id, module, windows[window_name], group_by, output_file)
 
     for window_name in WINDOW_NAMES:
         if report_type in {"weekly", "monthly"} or window_name == "current":
@@ -873,122 +873,72 @@ def build_plan(
             trend_group = [business_store, business_month]
             trend_module = "monthlyTrend"
         trend_windows["current"] = trend_window.as_json()
-        add_if_covered(
-            jobs,
-            notices,
-            coverage,
-            job=aggregate_job(
-                job_id=trend_id,
-                module=trend_module,
-                dataset_name="business",
-                registry=registry,
-                window=trend_window,
-                date_field=business_date,
-                group_by=trend_group,
-                aggregates=business_aggs,
-                output_file=trend_id,
-                limits=limits,
-            ),
-            datasets=["business"],
-            window=trend_window,
-            module=trend_module,
-            notice_partial=True,
-        )
-        if jobs and jobs[-1]["id"] == trend_id:
-            for suffix, aggregates in business_supplemental_sets:
-                jobs.append(
-                    aggregate_job(
-                        job_id=f"{trend_id}_{suffix}",
-                        module=trend_module,
-                        dataset_name="business",
-                        registry=registry,
-                        window=trend_window,
-                        date_field=business_date,
-                        group_by=trend_group,
-                        aggregates=aggregates,
-                        output_file=f"{trend_id}_{suffix}",
-                        limits=limits,
-                    )
-                )
-        if report_type == "monthly":
-            prior_window = DateWindow(
+        add_business_window(trend_id, trend_module, trend_window, trend_group, trend_id, notice_partial=True)
+
+        prior_window = (
+            DateWindow(
+                "prior_year_trend",
+                trend_window.start - timedelta(days=52 * 7),
+                trend_window.end - timedelta(days=52 * 7),
+            )
+            if report_type == "weekly"
+            else DateWindow(
                 "prior_year_trend",
                 same_date_previous_year(trend_window.start),
                 same_date_previous_year(trend_window.end),
             )
-            trend_windows["priorYear"] = prior_window.as_json()
+        )
+        prior_trend_id = (
+            "business_16_week_prior_year_store_trend"
+            if report_type == "weekly"
+            else "business_6_month_prior_year_store_trend"
+        )
+        trend_windows["priorYear"] = prior_window.as_json()
+        add_business_window(
+            prior_trend_id,
+            trend_module,
+            prior_window,
+            trend_group,
+            prior_trend_id,
+            notice_partial=True,
+        )
+
+        for window_name in WINDOW_NAMES:
+            add_business(
+                f"business_{window_name}_channel_platform_mix",
+                "channelMix",
+                window_name,
+                [business_store, order_category, order_source, dining_method],
+                f"business_{window_name}_channel_platform_mix",
+            )
+            add_business(
+                f"business_{window_name}_daypart_mix",
+                "daypartAttribution",
+                window_name,
+                [business_store, meal_period, time_slot],
+                f"business_{window_name}_daypart_mix",
+            )
             add_if_covered(
                 jobs,
                 notices,
                 coverage,
                 job=aggregate_job(
-                    job_id="business_6_month_prior_year_store_trend",
-                    module="monthlyTrend",
-                    dataset_name="business",
+                    job_id=f"dishes_{window_name}_product_totals",
+                    module="stallAttribution",
+                    dataset_name="dishes",
                     registry=registry,
-                    window=prior_window,
-                    date_field=business_date,
-                    group_by=[business_store, business_month],
-                    aggregates=business_aggs,
-                    output_file="business_6_month_prior_year_store_trend",
+                    window=windows[window_name],
+                    date_field=dishes_date,
+                    group_by=[dishes_store, product_name, matched_product_name, dish_order_category],
+                    aggregates=dish_aggs,
+                    output_file=f"dishes_{window_name}_product_totals",
                     limits=limits,
+                    order_by=[{"field": "dish_revenue", "direction": "desc"}],
                 ),
-                datasets=["business"],
-                window=prior_window,
-                module="monthlyTrend",
-                notice_partial=True,
-            )
-            if jobs and jobs[-1]["id"] == "business_6_month_prior_year_store_trend":
-                for suffix, aggregates in business_supplemental_sets:
-                    jobs.append(
-                        aggregate_job(
-                            job_id=f"business_6_month_prior_year_store_trend_{suffix}",
-                            module="monthlyTrend",
-                            dataset_name="business",
-                            registry=registry,
-                            window=prior_window,
-                            date_field=business_date,
-                            group_by=[business_store, business_month],
-                            aggregates=aggregates,
-                            output_file=f"business_6_month_prior_year_store_trend_{suffix}",
-                            limits=limits,
-                        )
-                    )
-        add_business(
-            "business_current_channel_platform_mix",
-            "channelMix",
-            "current",
-            [business_store, order_category, order_source, dining_method],
-            "business_current_channel_platform_mix",
-        )
-        add_business(
-            "business_current_daypart_mix",
-            "daypartAttribution",
-            "current",
-            [business_store, meal_period, time_slot],
-            "business_current_daypart_mix",
-        )
-        add_if_covered(
-            jobs,
-            notices,
-            coverage,
-            job=aggregate_job(
-                job_id="dishes_current_product_totals",
+                datasets=["dishes", "dish_catalog"],
+                window=windows[window_name],
                 module="stallAttribution",
-                dataset_name="dishes",
-                registry=registry,
-                window=windows["current"],
-                date_field=dishes_date,
-                group_by=[dishes_store, product_name, matched_product_name, dish_order_category],
-                aggregates=dish_aggs,
-                output_file="dishes_current_product_totals",
-                limits=limits,
-                order_by=[{"field": "dish_revenue", "direction": "desc"}],
-            ),
-            datasets=["dishes", "dish_catalog"],
-            window=windows["current"],
-            module="stallAttribution",
-        )
+            )
         add_if_covered(
             jobs,
             notices,
@@ -1062,7 +1012,6 @@ def main(argv: list[str]) -> int:
         manifest["outputContract"] = {
             "tool": "query_structured_dataset",
             "limits": limits,
-            "registryVersionSource": "list_structured_datasets",
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

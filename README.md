@@ -2,13 +2,13 @@
 
 Enterprise Hub-backed reporting skill for Maijia operating reports.
 
-This repository is an Enterprise Hub-backed derivative design informed by the original [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill. The upstream source currently exposes no detected license metadata, so this repository does not assert upstream license inheritance. Implementation in this repository is independent and licensed under this repository's MIT license; see [LICENSE](LICENSE).
+This repository adapts the report presentation and interactions from the original [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill while replacing local workbook reads with Enterprise Hub queries. It is released by the copyright holder under this repository's MIT license; see [LICENSE](LICENSE).
 
-This skill uses `enterprise-hub-mcp-launcher@0.2.6` and the authenticated Enterprise Hub MCP tools for structured dataset registry, coverage, and query access.
+This skill uses `enterprise-hub-mcp-launcher@0.2.7` and the authenticated Enterprise Hub MCP tools for structured dataset registry, coverage, and query access.
 
 ## Installation
 
-Prerequisite: install and use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. This reporting skill requires `enterprise-hub-mcp-launcher@0.2.6`, but launcher installation and authentication are delegated to the prerequisite skill.
+Prerequisite: install and use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. This reporting skill requires `enterprise-hub-mcp-launcher@0.2.7`, but launcher installation and authentication are delegated to the prerequisite skill.
 
 Install this reporting skill in the cross-runtime user skills directory:
 
@@ -47,11 +47,11 @@ Excluded by design:
    - monthly: `python3 scripts/run_monthly_report.py`
 7. Keep registry, coverage, manifest, raw query responses, bundle, facts, and report HTML as run provenance; remove only scratch files that are not needed for audit.
 
-Missing coverage or failed optional jobs should become partial reports with visible notices, not fabricated facts or service-health claims.
+Missing coverage or failed optional jobs should become partial or empty reports, not fabricated facts or service-health claims. Unsupported modules are hidden; the report uses short business-language notices and does not display query jobs, source files, IDs, coverage tables, or internal error codes.
 
 ## Current Contract Files
 
-- `config/maijia.json` defines schema version `1`, canonical datasets, Maijia store buckets, semantic field mappings, report modules, and query limits.
+- `config/maijia.json` defines configuration format `1`, canonical datasets, Maijia store buckets, semantic field mappings, report modules, and query limits.
 - `tests/fixtures/registry_response.json` is the full scoped `list_structured_datasets` envelope for the reporting contract, covering every current `business`, `dishes`, and `dish_catalog` canonical field.
 - `tests/fixtures/coverage_business.json`, `tests/fixtures/coverage_dishes.json`, and `tests/fixtures/coverage_dish_catalog.json` are synthetic `describe_structured_dataset_coverage` envelopes.
 

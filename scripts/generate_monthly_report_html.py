@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a self-contained Maijia monthly meeting report."""
+"""Render the original Maijia monthly meeting experience from SMEDC-derived facts."""
 
 from __future__ import annotations
 
@@ -7,19 +7,39 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
-from generate_weekly_report_html import render_meeting_report
+from generate_weekly_report_html import accessible_html, inject_missing_data_notice, presentation_payload
+from meeting_report_monthly import build_payload, monthly_template
 
 
-def render(input_dir: Path, report_path: Path) -> dict:
-    return render_meeting_report(
-        input_dir,
-        report_path,
-        summary_name="monthly_meeting_summary.json",
-        prefix="monthly",
-        title="麦家小馆月会经营报告",
-        trend_label="month_label",
+def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
+    summary_path = input_dir / "monthly_meeting_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    payload = build_payload(input_dir, "麦家小馆")
+    html = monthly_template().replace("__TITLE__", str(payload["meta"]["title"]))
+    html = html.replace("麦家小馆月经营会报", "麦家小馆月会经营报告")
+    html = html.replace(
+        '<script id="payload" type="application/json">',
+        '<script type="application/json" id="report-data">',
     )
+    html = html.replace("getElementById('payload')", "getElementById('report-data')")
+    html = html.replace(
+        "__PAYLOAD__",
+        json.dumps(presentation_payload(payload), ensure_ascii=False).replace("<", "\\u003c").replace("&", "\\u0026"),
+    )
+    html = inject_missing_data_notice(html, list(payload.get("data_gaps", [])))
+    html = accessible_html(html)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(html, encoding="utf-8")
+    return {
+        "artifacts": {
+            "report": str(report_path),
+            "summary": str(summary_path),
+            "facts": [name for name in payload.get("meta", {}).get("outputs", []) if str(name).endswith(".csv")],
+        },
+        "notices": summary.get("data_gaps", []),
+    }
 
 
 def parse_args() -> argparse.Namespace:

@@ -51,6 +51,8 @@ METRIC_FIELDS = [
 COMPARISON_METRICS = [
     "net_revenue",
     "gross_sales",
+    "dine_in_revenue",
+    "delivery_revenue",
     "positive_orders",
     "customer_count",
     "consumed_tables",
@@ -219,6 +221,64 @@ def job_metadata(bundle: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(results, dict):
         return []
     return [{"jobId": job_id} for job_id in sorted(results)]
+
+
+def human_gap_messages(notices: list[dict[str, Any]]) -> list[str]:
+    """Translate transport and coverage details into concise report-user language."""
+    messages: list[str] = []
+    for notice in notices:
+        if not isinstance(notice, dict):
+            continue
+        module = str(notice.get("module") or "")
+        window = str(notice.get("window") or "")
+        if module in {"weeklyTrend", "monthlyTrend"}:
+            message = "历史营业数据不足，趋势图只展示当前可用区间。"
+        elif module == "coreBusiness" and window == "current":
+            message = "缺少本期营业数据，本期经营分析未展示。"
+        elif module == "coreBusiness":
+            message = "缺少上期或同期营业数据，相关对比和归因未展示。"
+        elif module in {"channelMix", "daypartAttribution"}:
+            message = "营业明细维度不足，部分渠道或时段分析未展示。"
+        elif module == "stallAttribution":
+            message = "缺少菜品销售数据或菜品库，档口和产品分析未展示。"
+        else:
+            continue
+        if message not in messages:
+            messages.append(message)
+    return messages
+
+
+def report_gap_messages(
+    notices: list[dict[str, Any]],
+    *,
+    has_current: bool,
+    has_previous: bool,
+    has_yoy: bool,
+    has_trend: bool,
+    has_channels: bool,
+    has_dayparts: bool,
+    has_dishes: bool,
+    has_catalog: bool,
+) -> list[str]:
+    """Describe omitted report modules without exposing transport details."""
+    messages = human_gap_messages(notices)
+    inferred: list[str] = []
+    if not has_current:
+        inferred.append("缺少本期营业数据，本期经营分析未展示。")
+    elif not has_previous or not has_yoy:
+        inferred.append("缺少上期或同期营业数据，部分对比和归因未展示。")
+    if not has_trend:
+        inferred.append("缺少历史营业数据，趋势图未展示。")
+    if not has_channels:
+        inferred.append("缺少渠道数据，堂食与外卖分析未展示。")
+    if not has_dayparts:
+        inferred.append("缺少时段数据，时段分析未展示。")
+    if not has_dishes or not has_catalog:
+        inferred.append("缺少菜品销售数据或菜品库，档口和产品分析未展示。")
+    for message in inferred:
+        if message not in messages:
+            messages.append(message)
+    return messages
 
 
 def dec(value: Any) -> Decimal:
@@ -428,46 +488,128 @@ def comparison_rows(current_rows: list[dict[str, Any]], previous_rows: list[dict
             row[f"yoy_{field}_delta"] = yoy_delta
             row[f"yoy_{field}_pct"] = yoy_pct
         row["open_rate_delta"] = row["wow_open_rate_delta"]
-        row["store_segment"] = classify_store(row)
         rows.append(row)
     return sorted(rows, key=lambda item: item["门店名称"])
 
 
-def classify_store(row: dict[str, Any]) -> str:
-    if row.get("wow_net_revenue_pct") is None or row.get("yoy_net_revenue_pct") is None:
-        return "对比不足"
-    wow = dec(row.get("wow_net_revenue_pct"))
-    yoy = dec(row.get("yoy_net_revenue_pct"))
-    if wow >= 0 and yoy >= 0:
-        return "明星门店"
-    if wow < 0 and yoy < 0:
-        return "问题门店"
-    if wow < 0 <= yoy:
-        return "修复门店"
-    return "观察门店"
+def median(values: list[float]) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def classify_stores(comparisons: list[dict[str, Any]], period_name: str) -> list[dict[str, Any]]:
+    by_bucket: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in comparisons:
+        by_bucket[str(row["store_size_bucket"])].append(row)
+    thresholds = {
+        bucket: {
+            "revenue": median([float(row.get("current_net_revenue") or 0) for row in rows]),
+            "discount": median([float(row.get("current_discount_rate") or 0) for row in rows]),
+            "aov": median([float(row.get("current_post_discount_aov") or 0) for row in rows]),
+        }
+        for bucket, rows in by_bucket.items()
+    }
+    output: list[dict[str, Any]] = []
+    for row in comparisons:
+        bucket = str(row["store_size_bucket"])
+        threshold = thresholds[bucket]
+        current_revenue = float(row.get("current_net_revenue") or 0)
+        wow = row.get("wow_net_revenue_pct")
+        yoy = row.get("yoy_net_revenue_pct")
+        if wow is None:
+            segment = "对比不足"
+            reason = "缺少上期可比数据"
+        else:
+            high_revenue = current_revenue >= threshold["revenue"]
+            growing = float(wow) >= 0
+            segment = {
+                (True, True): "明星门店",
+                (True, False): "高基盘承压",
+                (False, True): "成长观察",
+                (False, False): "问题门店",
+            }[(high_revenue, growing)]
+            relation = "不低于" if high_revenue else "低于"
+            direction = "非负" if growing else "为负"
+            reason = f"{period_name}业务收入{relation}{bucket}中位数，且环比增长率{direction}"
+        warnings: list[str] = []
+        if wow is not None and float(wow) <= -0.08:
+            warnings.append("环比下滑超过 8%")
+        if yoy is not None and float(yoy) <= -0.25:
+            warnings.append("同比下滑超过 25%")
+        discount = row.get("current_discount_rate")
+        aov = row.get("current_post_discount_aov")
+        if discount is not None and float(discount) > threshold["discount"] * 1.2:
+            warnings.append("折扣率高于同组中位水平 20% 以上")
+        if aov is not None and float(aov) < threshold["aov"] * 0.9:
+            warnings.append("客单价低于同组中位水平 10% 以上")
+        if warnings:
+            reason += "；预警：" + "、".join(warnings)
+        row["store_segment"] = segment
+        output.append(
+            {
+                "门店名称": row["门店名称"],
+                "store_size": bucket,
+                "store_size_bucket": bucket,
+                "segment": segment,
+                "store_segment": segment,
+                "reason": reason,
+                "revenue_threshold": round(threshold["revenue"], 2),
+                "growth_threshold": 0,
+                "current_net_revenue": row.get("current_net_revenue"),
+                "wow_net_revenue_pct": wow,
+                "yoy_net_revenue_pct": yoy,
+                "current_discount_rate": discount,
+                "current_post_discount_aov": aov,
+            }
+        )
+    order = {"明星门店": 0, "问题门店": 1, "高基盘承压": 2, "成长观察": 3, "对比不足": 4}
+    return sorted(output, key=lambda item: (order.get(str(item["segment"]), 9), -(item.get("current_net_revenue") or 0)))
 
 
 def driver_rows(comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows = []
+    rows: list[dict[str, Any]] = []
     for row in comparisons:
-        rows.append(
-            {
-                "门店名称": row["门店名称"],
-                "basis": "环比",
-                "net_revenue_delta": row.get("wow_net_revenue_delta"),
-                "net_revenue_pct": row.get("wow_net_revenue_pct"),
-                "driver_signal": row.get("store_segment"),
+        for basis, prefix, baseline in (("环比", "wow", "previous"), ("同比", "yoy", "yoy")):
+            current_revenue = row.get("current_net_revenue")
+            baseline_revenue = row.get(f"{baseline}_net_revenue")
+            current_orders = row.get("current_positive_orders")
+            baseline_orders = row.get(f"{baseline}_positive_orders")
+            current_aov = row.get("current_post_discount_aov")
+            baseline_aov = row.get(f"{baseline}_post_discount_aov")
+            complete = None not in (current_revenue, baseline_revenue, current_orders, baseline_orders, current_aov, baseline_aov)
+            volume = (float(current_orders) - float(baseline_orders)) * float(baseline_aov) if complete else None
+            price = float(current_orders) * (float(current_aov) - float(baseline_aov)) if complete else None
+            signals = {
+                "客流下降": row.get(f"{prefix}_customer_count_delta"),
+                "开台下降": row.get(f"{prefix}_consumed_tables_delta"),
+                "客单下降": row.get(f"{prefix}_post_discount_aov_delta"),
+                "堂食下降": row.get(f"{prefix}_dine_in_revenue_delta"),
+                "外卖下降": row.get(f"{prefix}_delivery_revenue_delta"),
             }
-        )
-        rows.append(
-            {
-                "门店名称": row["门店名称"],
-                "basis": "同比",
-                "net_revenue_delta": row.get("yoy_net_revenue_delta"),
-                "net_revenue_pct": row.get("yoy_net_revenue_pct"),
-                "driver_signal": row.get("store_segment"),
-            }
-        )
+            negative = [(name, float(value)) for name, value in signals.items() if value is not None and float(value) < 0]
+            rows.append(
+                {
+                    "门店名称": row["门店名称"],
+                    "basis": basis,
+                    "net_revenue_delta": row.get(f"{prefix}_net_revenue_delta"),
+                    "net_revenue_pct": row.get(f"{prefix}_net_revenue_pct"),
+                    "dine_in_delta": row.get(f"{prefix}_dine_in_revenue_delta"),
+                    "delivery_delta": row.get(f"{prefix}_delivery_revenue_delta"),
+                    "other_delta": None,
+                    "order_volume_contribution": round(volume, 2) if volume is not None else None,
+                    "aov_contribution": round(price, 2) if price is not None else None,
+                    "customer_delta": row.get(f"{prefix}_customer_count_delta"),
+                    "consumed_tables_delta": row.get(f"{prefix}_consumed_tables_delta"),
+                    "aov_delta": row.get(f"{prefix}_post_discount_aov_delta"),
+                    "discount_rate_delta": row.get(f"{prefix}_discount_rate_delta"),
+                    "top_negative_factor": min(negative, key=lambda item: item[1])[0] if negative else "无明显负向因素",
+                }
+            )
     return rows
 
 
@@ -515,22 +657,73 @@ def daypart_rows(rows: list[dict[str, Any]], period_label: str) -> list[dict[str
     return sorted(facts, key=lambda item: (item["门店名称"], -(item.get("net_revenue") or 0), item["餐段"], item["时段"]))
 
 
-def daypart_driver_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def daypart_comparison_rows(rows: list[dict[str, Any]], period_labels: dict[str, str]) -> list[dict[str, Any]]:
+    period_keys = {label: key for key, label in period_labels.items()}
+    by_key = {
+        (row["门店名称"], row["餐段"], row["时段"], period_keys.get(str(row.get("period")))): row
+        for row in rows
+        if str(row.get("period")) in period_keys
+    }
+    dimensions = sorted({key[:3] for key in by_key})
+    output: list[dict[str, Any]] = []
+    for store, meal, slot in dimensions:
+        sources = {period: by_key.get((store, meal, slot, period)) for period in ("current", "previous", "yoy")}
+        item: dict[str, Any] = {"门店名称": store, "餐段": meal, "时段": slot}
+        for period, source in sources.items():
+            for field in METRIC_FIELDS:
+                item[f"{period}_{field}"] = source.get(field) if source else None
+        for prefix, baseline in (("wow", "previous"), ("yoy", "yoy")):
+            for field in ("net_revenue", "gross_sales", "positive_orders", "customer_count", "dine_in_revenue", "delivery_revenue", "discount_amount"):
+                delta, pct = diff(sources["current"], sources[baseline], field)
+                item[f"{prefix}_{field}_delta"] = delta
+                item[f"{prefix}_{field}_pct"] = pct
+        output.append(item)
+    return sorted(output, key=lambda item: (item["门店名称"], -(item.get("current_net_revenue") or 0), item["餐段"], item["时段"]))
+
+
+def daypart_driver_rows(rows: list[dict[str, Any]], top_n: int = 3) -> list[dict[str, Any]]:
     by_store: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         by_store[row["门店名称"]].append(row)
-    drivers = []
+    drivers: list[dict[str, Any]] = []
     for store, store_rows in sorted(by_store.items()):
-        top = max(store_rows, key=lambda item: item.get("net_revenue") or 0)
-        drivers.append(
-            {
-                "门店名称": store,
-                "top_current_daypart": top["餐段"],
-                "top_current_time_slot": top["时段"],
-                "top_current_net_revenue": top.get("net_revenue"),
-                "daypart_signal": "当前收入最高时段",
-            }
-        )
+        for basis, prefix in (("环比", "wow"), ("同比", "yoy")):
+            comparable = [row for row in store_rows if row.get(f"{prefix}_net_revenue_delta") is not None]
+            negative = sorted(
+                (row for row in comparable if float(row[f"{prefix}_net_revenue_delta"]) < 0),
+                key=lambda row: float(row[f"{prefix}_net_revenue_delta"]),
+            )[:top_n]
+            positive = sorted(
+                (row for row in comparable if float(row[f"{prefix}_net_revenue_delta"]) > 0),
+                key=lambda row: float(row[f"{prefix}_net_revenue_delta"]),
+                reverse=True,
+            )[:top_n]
+            top_negative = negative[0] if negative else None
+            top_positive = positive[0] if positive else None
+            def signal(selected: list[dict[str, Any]]) -> str:
+                return " / ".join(
+                    f"{row['餐段']} {row['时段']} {float(row[f'{prefix}_net_revenue_delta']):+,.0f}"
+                    for row in selected
+                )
+            negative_signal = signal(negative)
+            positive_signal = signal(positive)
+            drivers.append(
+                {
+                    "门店名称": store,
+                    "basis": basis,
+                    "top_negative_daypart": top_negative.get("餐段") if top_negative else "",
+                    "top_negative_time_slot": top_negative.get("时段") if top_negative else "",
+                    "top_negative_net_revenue_delta": top_negative.get(f"{prefix}_net_revenue_delta") if top_negative else None,
+                    "top_negative_net_revenue_pct": top_negative.get(f"{prefix}_net_revenue_pct") if top_negative else None,
+                    "negative_daypart_signal": negative_signal,
+                    "top_positive_daypart": top_positive.get("餐段") if top_positive else "",
+                    "top_positive_time_slot": top_positive.get("时段") if top_positive else "",
+                    "top_positive_net_revenue_delta": top_positive.get(f"{prefix}_net_revenue_delta") if top_positive else None,
+                    "top_positive_net_revenue_pct": top_positive.get(f"{prefix}_net_revenue_pct") if top_positive else None,
+                    "positive_daypart_signal": positive_signal,
+                    "daypart_signal": " / ".join(filter(None, (negative_signal, positive_signal))) or "无明显时段变化",
+                }
+            )
     return drivers
 
 
@@ -562,16 +755,19 @@ def matched_stall(row: dict[str, Any], catalog: dict[str, str]) -> str:
     return UNMATCHED_STALL
 
 
-def period_revenue_maps(current_store_rows: list[dict[str, Any]]) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+def period_revenue_maps(current_store_rows: list[dict[str, Any]]) -> tuple[dict[str, Decimal], dict[str, Decimal], dict[str, Decimal]]:
+    dine_in_revenue: dict[str, Decimal] = {}
     order_revenue: dict[str, Decimal] = {}
     gross_sales: dict[str, Decimal] = {}
     for row in current_store_rows:
         store = store_name(row.get("store_name"))
+        dine_in_revenue[store] = dec(row.get("dine_in_revenue"))
         order_revenue[store] = dec(row.get("order_revenue"))
         gross_sales[store] = dec(row.get("gross_sales"))
+        dine_in_revenue[ALL_STORES_LABEL] = dine_in_revenue.get(ALL_STORES_LABEL, Decimal("0")) + dec(row.get("dine_in_revenue"))
         order_revenue[ALL_STORES_LABEL] = order_revenue.get(ALL_STORES_LABEL, Decimal("0")) + dec(row.get("order_revenue"))
         gross_sales[ALL_STORES_LABEL] = gross_sales.get(ALL_STORES_LABEL, Decimal("0")) + dec(row.get("gross_sales"))
-    return order_revenue, gross_sales
+    return dine_in_revenue, order_revenue, gross_sales
 
 
 def stall_and_product_outputs(
@@ -582,6 +778,7 @@ def stall_and_product_outputs(
     current_store_rows: list[dict[str, Any]],
     dish_rows: list[dict[str, Any]],
     catalog_rows: list[dict[str, Any]],
+    comparison_dish_rows: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     catalog = catalog_lookup(catalog_rows)
     if not dish_rows or not catalog_rows:
@@ -595,23 +792,25 @@ def stall_and_product_outputs(
             "product_sales_per_10k_gross_sales": {"enabled": False, "reason": reason},
         }
 
-    order_revenue, gross_sales = period_revenue_maps(current_store_rows)
+    dine_in_revenue, order_revenue, gross_sales = period_revenue_maps(current_store_rows)
     stall_groups: dict[tuple[str, str], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
     product_groups: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     matched = 0
     for row in dish_rows:
         store = store_name(row.get("store_name"))
         product = str(row.get("product_name") or row.get("matched_product_name") or "未知产品").strip()
-        sales_class = "堂食" if str(row.get("order_category") or "").startswith("店内") else "外卖"
+        is_dine_in = str(row.get("order_category") or "").strip() == "店内销售"
+        sales_class = "堂食" if is_dine_in else "外卖"
         stall = matched_stall(row, catalog)
         if stall != UNMATCHED_STALL:
             matched += 1
         quantity = dec(row.get("dish_quantity"))
         income = dec(row.get("dish_revenue"))
-        stall_groups[(store, stall)]["stall_income"] += income
-        stall_groups[(store, stall)]["quantity"] += quantity
-        stall_groups[(ALL_STORES_LABEL, stall)]["stall_income"] += income
-        stall_groups[(ALL_STORES_LABEL, stall)]["quantity"] += quantity
+        if is_dine_in:
+            stall_groups[(store, stall)]["stall_income"] += income
+            stall_groups[(store, stall)]["quantity"] += quantity
+            stall_groups[(ALL_STORES_LABEL, stall)]["stall_income"] += income
+            stall_groups[(ALL_STORES_LABEL, stall)]["quantity"] += quantity
         key = (store, product, sales_class, stall)
         product_groups.setdefault(
             key,
@@ -645,7 +844,7 @@ def stall_and_product_outputs(
 
     stall_rows = []
     for (store, stall), values in stall_groups.items():
-        denominator = order_revenue.get(store, Decimal("0"))
+        denominator = dine_in_revenue.get(store, Decimal("0"))
         stall_rows.append(
             {
                 "period_key": "current",
@@ -690,24 +889,146 @@ def stall_and_product_outputs(
             output.extend(ranked[:1])
         return output
 
+    period_labels = (
+        {"current": "本周", "previous": "环比周", "yoy": "同比周"}
+        if prefix == "weekly"
+        else {"current": "本月", "previous": "上月", "yoy": "去年同月"}
+    )
+    attribution_sources = {"current": dish_rows, **(comparison_dish_rows or {})}
+    period_stalls: dict[tuple[str, str, str], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
+    period_products: dict[tuple[str, str, str, str, str], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
+    for period_key, period_rows in attribution_sources.items():
+        if period_key not in period_labels:
+            continue
+        for source in period_rows:
+            store = store_name(source.get("store_name"))
+            stall = matched_stall(source, catalog)
+            product = str(source.get("product_name") or source.get("matched_product_name") or "未知产品").strip()
+            channel = "堂食" if str(source.get("order_category") or "").strip() == "店内销售" else "外卖"
+            income = dec(source.get("dish_revenue"))
+            quantity = dec(source.get("dish_quantity"))
+            period_stalls[(store, stall, period_key)]["income"] += income
+            period_stalls[(store, stall, period_key)]["quantity"] += quantity
+            period_products[(store, stall, product, channel, period_key)]["income"] += income
+            period_products[(store, stall, product, channel, period_key)]["quantity"] += quantity
+
+    comparison_rows: list[dict[str, Any]] = []
+    stall_keys = sorted({key[:2] for key in period_stalls})
+    for store, stall in stall_keys:
+        item: dict[str, Any] = {"门店名称": store, "档口": stall}
+        for period_key in period_labels:
+            values = period_stalls.get((store, stall, period_key))
+            item[f"{period_key}_income"] = rounded(values["income"], 2) if values else None
+            item[f"{period_key}_quantity"] = rounded(values["quantity"], 2) if values else None
+        for basis, baseline in (("wow", "previous"), ("yoy", "yoy")):
+            for metric in ("income", "quantity"):
+                current_value = item.get(f"current_{metric}")
+                baseline_value = item.get(f"{baseline}_{metric}")
+                if current_value is None or baseline_value is None:
+                    delta = pct = None
+                else:
+                    delta = round(float(current_value) - float(baseline_value), 2)
+                    pct = round(delta / float(baseline_value), 4) if float(baseline_value) else None
+                item[f"{basis}_{metric}_delta"] = delta
+                item[f"{basis}_{metric}_pct"] = pct
+        comparison_rows.append(item)
+    comparison_rows.sort(key=lambda item: (item["门店名称"], -(item.get("current_income") or 0)))
+
+    attribution_drivers: list[dict[str, Any]] = []
+    dish_drivers: list[dict[str, Any]] = []
+    for store in sorted({item["门店名称"] for item in comparison_rows}):
+        store_rows = [item for item in comparison_rows if item["门店名称"] == store]
+        for basis, baseline in (("环比", "previous"), ("同比", "yoy")):
+            prefix_key = "wow" if basis == "环比" else "yoy"
+            comparable = [item for item in store_rows if item.get(f"{prefix_key}_income_delta") is not None]
+            negative = sorted(comparable, key=lambda item: float(item[f"{prefix_key}_income_delta"]))
+            positive = sorted(comparable, key=lambda item: float(item[f"{prefix_key}_income_delta"]), reverse=True)
+            top_negative = negative[0] if negative and float(negative[0][f"{prefix_key}_income_delta"]) < 0 else None
+            top_positive = positive[0] if positive and float(positive[0][f"{prefix_key}_income_delta"]) > 0 else None
+            attribution_drivers.append(
+                {
+                    "门店名称": store,
+                    "basis": basis,
+                    "top_negative_stall": top_negative.get("档口") if top_negative else "",
+                    "top_negative_income_delta": top_negative.get(f"{prefix_key}_income_delta") if top_negative else None,
+                    "top_negative_income_pct": top_negative.get(f"{prefix_key}_income_pct") if top_negative else None,
+                    "top_positive_stall": top_positive.get("档口") if top_positive else "",
+                    "top_positive_income_delta": top_positive.get(f"{prefix_key}_income_delta") if top_positive else None,
+                    "top_positive_income_pct": top_positive.get(f"{prefix_key}_income_pct") if top_positive else None,
+                    "stall_signal": " / ".join(
+                        part
+                        for part in (
+                            f"{top_negative['档口']} {float(top_negative[f'{prefix_key}_income_delta']):,.0f}" if top_negative else "",
+                            f"{top_positive['档口']} +{float(top_positive[f'{prefix_key}_income_delta']):,.0f}" if top_positive else "",
+                        )
+                        if part
+                    ) or "无明显档口变化",
+                }
+            )
+            for direction, focus in (("negative", top_negative), ("positive", top_positive)):
+                if not focus:
+                    continue
+                candidates: list[dict[str, Any]] = []
+                for product_key, values in period_products.items():
+                    dish_store, dish_stall, product, channel, period_key = product_key
+                    if dish_store != store or dish_stall != focus["档口"] or period_key != "current":
+                        continue
+                    baseline_values = period_products.get((store, dish_stall, product, channel, baseline))
+                    if not baseline_values:
+                        continue
+                    delta = values["income"] - baseline_values["income"]
+                    candidates.append(
+                        {
+                            "门店名称": store,
+                            "basis": basis,
+                            "direction": direction,
+                            "档口": dish_stall,
+                            "菜品名称": product,
+                            "channel": channel,
+                            "current_income": rounded(values["income"], 2),
+                            "baseline_income": rounded(baseline_values["income"], 2),
+                            "income_delta": rounded(delta, 2),
+                            "income_pct": rounded(div(delta, baseline_values["income"]), 4),
+                            "current_quantity": rounded(values["quantity"], 2),
+                            "baseline_quantity": rounded(baseline_values["quantity"], 2),
+                            "quantity_delta": rounded(values["quantity"] - baseline_values["quantity"], 2),
+                        }
+                    )
+                candidates.sort(key=lambda item: float(item["income_delta"] or 0), reverse=direction == "positive")
+                dish_drivers.extend(candidates[:5])
+
     stall_sales_name = f"{prefix}_store_stall_sales_mix.csv"
     product_name = f"{prefix}_store_product_sales_per_10k.csv"
     stall_metrics_name = f"{prefix}_store_stall_metrics.csv"
     stall_comparison_name = f"{prefix}_store_stall_comparison.csv"
     stall_driver_name = f"{prefix}_store_stall_driver_summary.csv"
-    stall_dish_driver_name = f"{prefix}_store_stall_dish_driver_detail.csv"
+    stall_dish_driver_name = f"{prefix}_store_stall_dish_drivers.csv"
     write_csv(output_dir / stall_sales_name, stall_rows, ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "dine_in_revenue", "share"])
     write_csv(output_dir / product_name, product_rows, ["period_key", "period_label", "门店名称", "产品名称", "销售分类", "档口", "quantity", "order_revenue", "units_per_10k", "gross_sales", "units_per_10k_gross_sales", "search_names"])
-    write_csv(output_dir / stall_metrics_name, stall_rows, ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "share"])
-    write_csv(output_dir / stall_comparison_name, stall_rows, ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "share"])
-    write_csv(output_dir / stall_driver_name, top_per_store(stall_rows, "stall_income"), ["period_key", "period_label", "门店名称", "档口", "stall_income", "quantity", "share"])
-    write_csv(output_dir / stall_dish_driver_name, top_per_store(product_rows, "quantity"), ["period_key", "period_label", "门店名称", "产品名称", "销售分类", "档口", "quantity", "order_revenue", "units_per_10k", "gross_sales", "units_per_10k_gross_sales", "search_names"])
+    stall_metric_rows = [
+        {
+            "period_key": period_key,
+            "period_label": period_labels[period_key],
+            "门店名称": store,
+            "档口": stall,
+            "income": rounded(values["income"], 2),
+            "quantity": rounded(values["quantity"], 2),
+        }
+        for (store, stall, period_key), values in sorted(period_stalls.items())
+    ]
+    write_csv(output_dir / stall_metrics_name, stall_metric_rows, ["period_key", "period_label", "门店名称", "档口", "income", "quantity"])
+    write_csv(output_dir / stall_comparison_name, comparison_rows, list(comparison_rows[0]) if comparison_rows else ["门店名称", "档口"])
+    write_csv(output_dir / stall_driver_name, attribution_drivers, list(attribution_drivers[0]) if attribution_drivers else ["门店名称", "basis"])
+    write_csv(output_dir / stall_dish_driver_name, dish_drivers, list(dish_drivers[0]) if dish_drivers else ["门店名称", "basis", "direction", "档口", "菜品名称"])
     write_csv(
         output_dir / "dish_catalog_match_summary.csv",
         [
             {"metric": "dish_rows", "value": len(dish_rows)},
             {"metric": "matched_rows", "value": matched},
             {"metric": "unmatched_rows", "value": len(dish_rows) - matched},
+            {"metric": "match_rate", "value": round(matched / len(dish_rows), 4) if dish_rows else 0},
+            {"metric": "catalog_rows", "value": len(catalog_rows)},
+            {"metric": "catalog_stall_count", "value": len(set(catalog.values()))},
         ],
         ["metric", "value"],
     )
@@ -725,6 +1046,18 @@ def stall_and_product_outputs(
         "outputs": outputs,
         "matched_rows": matched,
         "unmatched_rows": len(dish_rows) - matched,
+        "period_coverage": {
+            key: {"label": label, "rows": len(attribution_sources.get(key, []))}
+            for key, label in period_labels.items()
+        },
+        "stall_attribution": {
+            "enabled": bool(attribution_drivers),
+            "basis": "按门店和档口比较本期、上期与同期菜品收入；代表菜品按收入变化排序。",
+            "period_coverage": {
+                key: {"label": label, "rows": len(attribution_sources.get(key, []))}
+                for key, label in period_labels.items()
+            },
+        },
         "product_sales_per_10k": {"enabled": True, "output": product_name},
         "product_sales_per_10k_order_revenue": {"enabled": True, "output": product_name, "denominator": "order_revenue"},
         "product_sales_per_10k_gross_sales": {"enabled": True, "output": product_name, "denominator": "gross_sales_amount"},

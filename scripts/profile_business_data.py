@@ -159,7 +159,6 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
             "bundle": str(bundle_path),
             "report_type": "diagnosis",
             "windows": bundle["report"]["windows"],
-            "registryVersions": bundle.get("registryVersions", {}),
             "coverage": bundle.get("coverage", {}),
             "jobs": job_metadata(bundle),
             "outputContract": bundle.get("outputContract"),
