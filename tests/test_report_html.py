@@ -28,7 +28,6 @@ def assert_self_contained(testcase: unittest.TestCase, html: str) -> None:
     testcase.assertIn("<script>", html)
     testcase.assertIn('type="application/json"', html)
     testcase.assertRegex(html, r"<table[^>]+aria-label=")
-    testcase.assertIn("<caption>", html)
     testcase.assertIn('scope="col"', html)
     payload_match = re.search(r'<script type="application/json" id="report-data">(.*?)</script>', html, re.DOTALL)
     testcase.assertIsNotNone(payload_match, "report must embed its source payload as JSON")
@@ -38,6 +37,13 @@ def assert_self_contained(testcase: unittest.TestCase, html: str) -> None:
 
 def strip_embedded_scripts(html: str) -> str:
     return re.sub(r"<script\b.*?</script>", "", html, flags=re.IGNORECASE | re.DOTALL)
+
+
+def embedded_payload(html: str) -> dict:
+    match = re.search(r'<script type="application/json" id="report-data">(.*?)</script>', html, re.DOTALL)
+    if match is None:
+        raise AssertionError("report payload is missing")
+    return json.loads(match.group(1))
 
 
 class ReportHtmlTests(unittest.TestCase):
@@ -82,7 +88,6 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("麦家小馆经营诊断", html)
         self.assertIn("2026-07-01", html)
         self.assertIn("2026-07-07", html)
-        self.assertIn("business.2026-09-04.v2", html)
         self.assertIn("doc_diagnosis_business", html)
         self.assertIn("OPTIONAL_MODULE_MISSING", html)
         self.assertIn("核心 KPI", html)
@@ -111,18 +116,23 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("麦家小馆周会经营报告", html)
         self.assertIn("2026-07-20", html)
         self.assertIn("2026-07-26", html)
-        self.assertIn("本期 / 上期 / 同比", html)
         self.assertIn("趋势", html)
-        self.assertIn("门店象限 / 排名", html)
-        self.assertIn("渠道结构", html)
-        self.assertIn("餐段 / 时段", html)
-        self.assertIn("档口销售占比", html)
-        self.assertIn("产品每万收入销量", html)
-        self.assertIn("产品每万流水销量", html)
+        self.assertIn("门店横向对比", html)
+        self.assertIn("堂食与外卖", html)
+        self.assertIn("时段归因", html)
+        self.assertIn("档口占比", html)
+        self.assertIn("产品万元销量（订单营业收入）", html)
+        self.assertIn("产品万元销量（营业额）", html)
         self.assertIn("牛肉面", html)
         self.assertIn("面档", html)
         self.assertIn("明星门店", html)
-        self.assertIn("OPTIONAL_MODULE_MISSING", html)
+        self.assertNotIn("OPTIONAL_MODULE_MISSING", html)
+        self.assertIn('id="trendStoreSelect"', html)
+        self.assertIn('id="stallMixPie"', html)
+        self.assertIn('id="hourlyRevenueBar"', html)
+        self.assertIn('id="productSalesPer10kSearch"', html)
+        self.assertIn('id="productSalesPer10kGrossSearch"', html)
+        self.assertIn("查看渠道明细", html)
         self.assertEqual(summary["meta"]["report_grain"], "week")
 
     def test_monthly_report_renders_comparison_trend_mix_and_product_panels_without_removed_scope(self) -> None:
@@ -138,12 +148,15 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("2026-07-01", html)
         self.assertIn("2026-07-31", html)
         self.assertIn("2025-07-01", html)
-        self.assertIn("本期 / 上期 / 同比", html)
         self.assertIn("2025-06", html)
         self.assertIn("2026-07", html)
-        self.assertIn("档口销售占比", html)
-        self.assertIn("产品每万收入销量", html)
-        self.assertIn("产品每万流水销量", html)
+        self.assertIn("档口占比", html)
+        self.assertIn("产品万元销量（订单营业收入）", html)
+        self.assertIn("产品万元销量（营业额）", html)
+        self.assertIn('id="trendStoreSelect"', html)
+        self.assertIn('id="stallMixPie"', html)
+        self.assertIn('id="hourlyRevenueBar"', html)
+        self.assertIn('id="productSalesPer10kSearch"', html)
         forbidden = re.compile("|".join(["pro" + "fit", "monthly_" + "pro" + "fit", "利" + "润"]), re.IGNORECASE)
         self.assertNotRegex(html, forbidden)
         self.assertEqual(summary["meta"]["report_grain"], "month")
@@ -166,17 +179,17 @@ class ReportHtmlTests(unittest.TestCase):
         html = report_path.read_text(encoding="utf-8")
 
         assert_self_contained(self, html)
-        self.assertIn("部分数据不可用", html)
-        self.assertIn("缺少菜品主题数据或菜品库", html)
-        self.assertIn("档口销售占比", html)
-        self.assertIn("产品每万收入销量", html)
+        payload = embedded_payload(html)
+        self.assertIn("缺少菜品销售数据或菜品库，档口和产品分析未展示。", strip_embedded_scripts(html))
+        self.assertFalse(payload["stall_sales_mix"]["enabled"])
+        self.assertFalse(payload["product_sales_per_10k_order_revenue"]["enabled"])
+        self.assertFalse(payload["product_sales_per_10k_gross_sales"]["enabled"])
 
-    def test_weekly_report_renders_coverage_window_details_and_notice_gaps_visibly(self) -> None:
+    def test_weekly_report_hides_technical_coverage_details_and_uses_business_language(self) -> None:
         bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
         bundle["coverage"] = {
             "business": {
                 "dataset": "business",
-                "registryVersion": "business.2026-09-04.v2",
                 "metadataPolicy": "window",
                 "readable": True,
                 "sources": [],
@@ -221,67 +234,21 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertEqual(rendered.returncode, 0, rendered.stderr)
         visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
 
-        self.assertIn("覆盖明细", visible_html)
-        self.assertIn("business", visible_html)
-        self.assertIn("trend", visible_html)
-        self.assertIn("2026-04-06 至 2026-07-26", visible_html)
-        self.assertIn("2026-07-01 至 2026-07-26", visible_html)
-        self.assertIn("2026-04-06 至 2026-06-30", visible_html)
-        self.assertIn("42", visible_html)
-        self.assertIn("doc_visible_trend", visible_html)
-        self.assertIn("imp_visible_trend", visible_html)
-        self.assertIn("COVERAGE_WINDOW_PARTIAL", visible_html)
+        self.assertNotIn("覆盖明细", visible_html)
+        self.assertNotIn("doc_visible_trend", visible_html)
+        self.assertNotIn("imp_visible_trend", visible_html)
+        self.assertNotIn("COVERAGE_WINDOW_PARTIAL", visible_html)
+        self.assertIn("历史营业数据不足，趋势图只展示当前可用区间。", visible_html)
 
-    def test_report_source_section_renders_bundle_job_ids_visibly(self) -> None:
+    def test_report_does_not_render_internal_job_ids_visibly(self) -> None:
         _, html, _ = self.render_from_profile(
             "profile_weekly_data.py",
             "generate_weekly_report_html.py",
             "weekly_bundle.json",
             "weekly_meeting_summary.json",
         )
-        visible_html = strip_embedded_scripts(html)
-
-        self.assertIn("business_current_store_totals", visible_html)
-
-    def test_weekly_headline_open_rate_uses_table_day_denominator(self) -> None:
-        bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
-        bundle["resultsByJobId"]["business_current_store_totals"]["rows"] = [
-            {
-                "store_name": "高收入低桌天店",
-                "order_revenue": "9000",
-                "gross_sales": "10000",
-                "positive_orders": "90",
-                "diners": "100",
-                "table_days": "1",
-                "weighted_open_rate": "0.90",
-            },
-            {
-                "store_name": "低收入高桌天店",
-                "order_revenue": "1000",
-                "gross_sales": "1200",
-                "positive_orders": "10",
-                "diners": "20",
-                "table_days": "9",
-                "weighted_open_rate": "0.10",
-            },
-        ]
-        for job_id in ("business_previous_store_totals", "business_yoy_store_totals"):
-            bundle["resultsByJobId"][job_id]["rows"] = []
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        output_dir = Path(tmp.name)
-        bundle_path = output_dir / "bundle.json"
-        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
-        self.assertEqual(profile.returncode, 0, profile.stderr)
-        report_path = output_dir / "weighted.html"
-        rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
-        self.assertEqual(rendered.returncode, 0, rendered.stderr)
-        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
-
-        self.assertIn("<span>current_open_rate</span><strong>18.0%</strong>", visible_html)
-        self.assertNotIn("<span>current_open_rate</span><strong>50.0%</strong>", visible_html)
+        self.assertNotIn("business_current_store_totals", html)
+        self.assertNotIn("weekly_store_comparison.csv", html)
 
     def test_weekly_headline_additive_metrics_are_unknown_when_comparison_rows_are_incomplete(self) -> None:
         bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
@@ -300,49 +267,69 @@ class ReportHtmlTests(unittest.TestCase):
         report_path = output_dir / "incomplete-comparison.html"
         rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
         self.assertEqual(rendered.returncode, 0, rendered.stderr)
-        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+        payload = embedded_payload(report_path.read_text(encoding="utf-8"))
+        by_store = {row["门店名称"]: row for row in payload["comparison"]}
+        self.assertIsNone(by_store["龙玥城店"]["previous_net_revenue"])
+        self.assertIsNone(by_store["龙玥城店"]["wow_net_revenue_delta"])
+        self.assertTrue(all(row["yoy_net_revenue"] is None for row in payload["comparison"]))
 
-        for label in ("上期实收", "同比期实收", "环比实收差额", "同比实收差额"):
-            self.assertIn(f"<span>{label}</span><strong>暂无</strong>", visible_html)
-            self.assertNotIn(f"<span>{label}</span><strong>0.0</strong>", visible_html)
-
-    def test_weekly_headline_open_rate_is_unknown_with_partial_table_day_denominator(self) -> None:
+    def test_weekly_report_can_render_when_every_query_returns_no_rows(self) -> None:
         bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
-        bundle["resultsByJobId"]["business_current_store_totals"]["rows"][1].pop("table_days", None)
+        bundle["notices"] = []
+        for result in bundle["resultsByJobId"].values():
+            result["rows"] = []
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         output_dir = Path(tmp.name)
-        bundle_path = output_dir / "bundle.json"
+        bundle_path = output_dir / "empty-bundle.json"
         bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
 
         profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
         self.assertEqual(profile.returncode, 0, profile.stderr)
-        report_path = output_dir / "no-denominator.html"
+        report_path = output_dir / "empty.html"
         rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
         self.assertEqual(rendered.returncode, 0, rendered.stderr)
-        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+        html = report_path.read_text(encoding="utf-8")
+        payload = embedded_payload(html)
 
-        self.assertIn("<span>current_open_rate</span><strong>暂无</strong>", visible_html)
-        self.assertNotIn("<span>current_open_rate</span><strong>62.5%</strong>", visible_html)
+        assert_self_contained(self, html)
+        self.assertEqual(payload["availability"], {"current": False, "trend": False, "channels": False, "dayparts": False})
+        self.assertFalse(payload["stall_sales_mix"]["enabled"])
+        self.assertFalse(payload["product_sales_per_10k_order_revenue"]["enabled"])
+        visible_html = strip_embedded_scripts(html)
+        self.assertIn("缺少本期营业数据，本期经营分析未展示。", visible_html)
+        self.assertIn("缺少历史营业数据，趋势图未展示。", visible_html)
+        self.assertNotIn("COVERAGE_", html)
+        self.assertNotIn("business_current_store_totals", html)
 
-    def test_monthly_headline_open_rate_is_unknown_with_partial_zero_table_day_denominator(self) -> None:
+    def test_monthly_report_can_render_when_every_query_returns_no_rows(self) -> None:
         bundle = json.loads((FIXTURES / "monthly_bundle.json").read_text(encoding="utf-8"))
-        bundle["resultsByJobId"]["business_current_store_totals"]["rows"][1]["table_days"] = "0"
+        bundle["notices"] = []
+        for result in bundle["resultsByJobId"].values():
+            result["rows"] = []
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         output_dir = Path(tmp.name)
-        bundle_path = output_dir / "bundle.json"
+        bundle_path = output_dir / "empty-bundle.json"
         bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
 
         profile = run_script("scripts/profile_monthly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
         self.assertEqual(profile.returncode, 0, profile.stderr)
-        report_path = output_dir / "zero-denominator.html"
+        report_path = output_dir / "empty.html"
         rendered = run_script("scripts/generate_monthly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
         self.assertEqual(rendered.returncode, 0, rendered.stderr)
-        visible_html = strip_embedded_scripts(report_path.read_text(encoding="utf-8"))
+        html = report_path.read_text(encoding="utf-8")
+        payload = embedded_payload(html)
 
-        self.assertIn("<span>current_open_rate</span><strong>暂无</strong>", visible_html)
-        self.assertNotIn("<span>current_open_rate</span><strong>61.0%</strong>", visible_html)
+        assert_self_contained(self, html)
+        self.assertEqual(payload["availability"], {"current": False, "trend": False, "channels": False, "dayparts": False})
+        self.assertFalse(payload["stall_sales_mix"]["enabled"])
+        self.assertFalse(payload["product_sales_per_10k_order_revenue"]["enabled"])
+        visible_html = strip_embedded_scripts(html)
+        self.assertIn("缺少本期营业数据，本期经营分析未展示。", visible_html)
+        self.assertIn("缺少历史营业数据，趋势图未展示。", visible_html)
+        self.assertNotIn("COVERAGE_", html)
+        self.assertNotIn("business_current_store_totals", html)
 
     def test_runners_profile_render_and_print_final_json(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -364,5 +351,5 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertEqual(Path(result["artifacts"]["report"]), report_path)
         self.assertEqual(Path(result["artifacts"]["summary"]), output_dir / "weekly_meeting_summary.json")
         self.assertIn("weekly_store_comparison.csv", result["artifacts"]["facts"])
-        self.assertIn("OPTIONAL_MODULE_MISSING", [notice["code"] for notice in result["notices"]])
+        self.assertEqual(result["notices"], [])
         self.assertTrue(report_path.exists())

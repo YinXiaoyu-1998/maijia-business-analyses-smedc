@@ -186,6 +186,28 @@ class BuildQueryPlanTests(unittest.TestCase):
 
         return self.write_fixture_copy(replace_catalog_sources)
 
+    def coverage_with_complete_report_history(self) -> Path:
+        def replace_window_sources(name: str, data: dict) -> dict:
+            if name not in {"coverage_business.json", "coverage_dishes.json"}:
+                return data
+            dataset = data["dataset"]
+            return {
+                **data,
+                "sources": [
+                    {
+                        "importBatchId": f"imp_{dataset}_complete_history",
+                        "sourceDocumentId": f"doc_{dataset}_complete_history",
+                        "sourceDocumentTitle": f"Synthetic {dataset} complete report history",
+                        "startDate": "2025-01-01",
+                        "endDate": "2026-12-31",
+                        "appliedAt": "2026-09-07T08:00:00.000Z",
+                        "rowCount": 50000,
+                    }
+                ],
+            }
+
+        return self.write_fixture_copy(replace_window_sources)
+
     def job(self, manifest: dict, job_id: str) -> dict:
         matches = [job for job in manifest["jobs"] if job["id"] == job_id]
         self.assertEqual(len(matches), 1, job_id)
@@ -197,7 +219,6 @@ class BuildQueryPlanTests(unittest.TestCase):
     def assert_manifest_uses_target_wire_contract(self, manifest: dict) -> None:
         allowed_input_keys = {
             "dataset",
-            "registryVersion",
             "filter",
             "groupBy",
             "aggregates",
@@ -227,6 +248,22 @@ class BuildQueryPlanTests(unittest.TestCase):
                     self.assertIn("select", query)
                     self.assertNotIn("groupBy", query)
 
+    def test_single_schema_registry_and_queries_build_directly(self) -> None:
+        registry = json.loads((FIXTURES / "registry_response.json").read_text(encoding="utf-8"))
+        coverage_dir = self.write_fixture_copy(lambda _name, data: data)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        registry_path = Path(tmp.name) / "registry_response.json"
+        registry_path.write_text(json.dumps(registry, ensure_ascii=False), encoding="utf-8")
+
+        manifest = self.run_plan(
+            report_type="weekly",
+            registry_response=registry_path,
+            coverage_dir=coverage_dir,
+        )
+
+        self.assertEqual(manifest["outputContract"]["tool"], "query_structured_dataset")
+
     def test_diagnosis_includes_required_business_modules(self) -> None:
         manifest = self.run_plan(report_type="diagnosis")
 
@@ -252,6 +289,24 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertEqual(aggregate_ops["weighted_open_rate"], "weightedAvg")
         self.assertEqual(aggregate_ops["weighted_turnover_rate"], "weightedAvg")
         self.assertEqual(kpi_job["input"]["page"]["limit"], 200)
+
+    def test_weekly_full_history_queries_all_comparison_dimensions_and_both_trend_series(self) -> None:
+        manifest = self.run_plan(
+            report_type="weekly",
+            coverage_dir=self.coverage_with_complete_report_history(),
+        )
+        ids = set(self.job_ids(manifest))
+
+        for period in ("current", "previous", "yoy"):
+            self.assertIn(f"business_{period}_channel_platform_mix", ids)
+            self.assertIn(f"business_{period}_daypart_mix", ids)
+            self.assertIn(f"dishes_{period}_product_totals", ids)
+        self.assertIn("business_16_week_store_trend", ids)
+        self.assertIn("business_16_week_prior_year_store_trend", ids)
+        self.assertEqual(
+            manifest["report"]["trendWindows"]["priorYear"],
+            {"start": "2025-04-07", "end": "2025-07-27"},
+        )
 
     def test_weekly_manifest_includes_comparisons_trend_and_optional_dish_modules(self) -> None:
         manifest = self.run_plan(
@@ -402,7 +457,10 @@ class BuildQueryPlanTests(unittest.TestCase):
 
         self.assertEqual(
             weekly["report"]["trendWindows"],
-            {"current": {"start": "2026-04-06", "end": "2026-07-26"}},
+            {
+                "current": {"start": "2026-04-06", "end": "2026-07-26"},
+                "priorYear": {"start": "2025-04-07", "end": "2025-07-27"},
+            },
         )
         self.assertEqual(
             monthly["report"]["trendWindows"],
@@ -708,8 +766,9 @@ class BuildQueryPlanTests(unittest.TestCase):
 
         manifest = self.run_plan(coverage_dir=input_dir, registry_response=registry_path)
 
-        self.assertEqual(len(manifest["jobs"]), 22)
-        self.assertEqual(manifest["outputContract"]["registryVersionSource"], "list_structured_datasets")
+        expected = self.run_plan()
+        self.assertEqual(self.job_ids(manifest), self.job_ids(expected))
+        self.assertEqual(manifest["outputContract"]["tool"], "query_structured_dataset")
 
     def test_cli_help_documents_supported_report_types(self) -> None:
         completed = subprocess.run(

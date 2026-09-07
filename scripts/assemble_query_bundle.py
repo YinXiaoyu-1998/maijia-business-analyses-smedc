@@ -136,8 +136,6 @@ def validate_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             raise BundleError(f"job {job_id} input must be an object")
         if not isinstance(query.get("dataset"), str):
             raise BundleError(f"job {job_id} input.dataset must be a string")
-        if not isinstance(query.get("registryVersion"), str):
-            raise BundleError(f"job {job_id} input.registryVersion must be a string")
         is_aggregate = "groupBy" in query or "aggregates" in query
         is_detail = "select" in query
         if is_aggregate == is_detail:
@@ -290,8 +288,6 @@ def validate_page(page: dict[str, Any], job: dict[str, Any], page_index: int, pa
         raise BundleError(f"job {job['id']} page {page_index} query metadata mismatch")
     if page.get("dataset") != query["dataset"]:
         raise BundleError(f"job {job['id']} page {page_index} dataset mismatch")
-    if page.get("registryVersion") != query["registryVersion"]:
-        raise BundleError(f"job {job['id']} page {page_index} registryVersion mismatch")
     if page.get("mode") != expected_mode(query):
         raise BundleError(f"job {job['id']} page {page_index} mode mismatch")
     if "rows" not in page or not isinstance(page["rows"], list):
@@ -370,7 +366,6 @@ def assemble_job_result(job: dict[str, Any], response_data: Any) -> dict[str, An
         "module": job["module"],
         "tool": job["tool"],
         "dataset": query["dataset"],
-        "registryVersion": query["registryVersion"],
         "mode": expected_mode(query),
         "outputFile": job["outputFile"],
         "query": query,
@@ -391,16 +386,6 @@ def sort_notices(notices: list[dict[str, Any]]) -> list[dict[str, Any]]:
             str(notice.get("jobId", "")),
         ),
     )
-
-
-def registry_versions(manifest: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[str, str]:
-    versions: dict[str, str] = {}
-    for dataset_name, coverage in sorted(manifest["coverage"].items()):
-        if isinstance(coverage, dict) and isinstance(coverage.get("registryVersion"), str):
-            versions[str(dataset_name)] = coverage["registryVersion"]
-    for job in jobs:
-        versions.setdefault(job["input"]["dataset"], job["input"]["registryVersion"])
-    return dict(sorted(versions.items()))
 
 
 def assemble_bundle(manifest: dict[str, Any], responses_dir: Path, config: dict[str, Any]) -> dict[str, Any]:
@@ -431,7 +416,6 @@ def assemble_bundle(manifest: dict[str, Any], responses_dir: Path, config: dict[
             "module": job["module"],
             "tool": job["tool"],
             "dataset": job["input"]["dataset"],
-            "registryVersion": job["input"]["registryVersion"],
             "mode": expected_mode(job["input"]),
             "outputFile": job["outputFile"],
             "query": job["input"],
@@ -441,7 +425,6 @@ def assemble_bundle(manifest: dict[str, Any], responses_dir: Path, config: dict[
     return {
         "schemaVersion": 1,
         "report": manifest["report"],
-        "registryVersions": registry_versions(manifest, jobs),
         "coverage": manifest["coverage"],
         "notices": sort_notices(notices),
         "outputContract": manifest.get("outputContract"),

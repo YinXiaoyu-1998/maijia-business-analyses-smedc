@@ -84,13 +84,14 @@ class SkillContractTests(unittest.TestCase):
 
     def test_skill_requires_partial_report_notices_provenance_and_cleanup(self) -> None:
         for phrase in [
-            "partial report",
-            "COVERAGE_WINDOW_PARTIAL",
+            "partial or empty report",
+            "Hide every chart, table, navigation item",
+            "concise business language",
+            "Never expose coverage tables",
             "QUERY_RESPONSE_ERROR",
             "QUERY_RESPONSE_MISSING",
             "Provenance",
-            "registry versions",
-            "coverage sources and gaps",
+            "technical provenance",
             "durable evidence",
             "run-scoped scratch",
             "Do not delete",

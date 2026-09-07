@@ -25,7 +25,7 @@ def main() -> int:
     try:
         summary = profile(args.bundle, args.output_dir)
         result = render(args.output_dir, args.report)
-        result["notices"] = summary.get("notices", [])
+        result["notices"] = summary.get("data_gaps", [])
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

@@ -28,7 +28,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
             "coverage": {
                 "business": {
                     "dataset": "business",
-                    "registryVersion": "business.2026-09-04.v2",
                     "metadataPolicy": "window",
                     "readable": True,
                     "sources": [
@@ -44,7 +43,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
                 },
                 "dish_catalog": {
                     "dataset": "dish_catalog",
-                    "registryVersion": "dish_catalog.2026-08-22.v1",
                     "metadataPolicy": "snapshot",
                     "readable": True,
                     "sources": [],
@@ -64,7 +62,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
             "outputContract": {
                 "tool": "query_structured_dataset",
                 "limits": {"maxRows": 200, "maxAggregateGroups": 200},
-                "registryVersionSource": "list_structured_datasets",
             },
             "jobs": [
                 {
@@ -74,7 +71,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
                     "outputFile": "query-results/business_current_store_totals.json",
                     "input": {
                         "dataset": "business",
-                        "registryVersion": "business.2026-09-04.v2",
                         "groupBy": ["store_name"],
                         "aggregates": [{"op": "sum", "field": "order_revenue", "as": "order_revenue"}],
                         "sort": [{"field": "store_name", "direction": "asc"}],
@@ -88,7 +84,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
                     "outputFile": "query-results/dish_catalog_current_snapshot.json",
                     "input": {
                         "dataset": "dish_catalog",
-                        "registryVersion": "dish_catalog.2026-08-22.v1",
                         "select": ["snapshot_date", "dish_name", "base_category_name", "sale_price"],
                         "sort": [
                             {"field": "snapshot_date", "direction": "desc"},
@@ -188,7 +183,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
     def aggregate_page(self, *, rows: list[dict], next_cursor: str | None = None) -> dict:
         return {
             "dataset": "business",
-            "registryVersion": "business.2026-09-04.v2",
             "mode": "aggregate",
             "rows": rows,
             "nextCursor": next_cursor,
@@ -197,13 +191,12 @@ class AssembleQueryBundleTests(unittest.TestCase):
     def detail_page(self, *, rows: list[dict], next_cursor: str | None = None) -> dict:
         return {
             "dataset": "dish_catalog",
-            "registryVersion": "dish_catalog.2026-08-22.v1",
             "mode": "detail",
             "rows": rows,
             "nextCursor": next_cursor,
         }
 
-    def test_assembles_successful_responses_into_versioned_bundle(self) -> None:
+    def test_assembles_successful_responses_into_bundle(self) -> None:
         _, bundle = self.run_bundle(
             responses={
                 "query-results/business_current_store_totals.json": self.aggregate_page(
@@ -224,10 +217,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
 
         self.assertEqual(bundle["schemaVersion"], 1)
         self.assertEqual(bundle["report"]["windows"]["current"], {"start": "2026-07-01", "end": "2026-07-31"})
-        self.assertEqual(
-            bundle["registryVersions"],
-            {"business": "business.2026-09-04.v2", "dish_catalog": "dish_catalog.2026-08-22.v1"},
-        )
         self.assertEqual(bundle["coverage"], self.manifest()["coverage"])
         self.assertEqual(bundle["notices"], self.manifest()["notices"])
         self.assertEqual(
@@ -238,6 +227,20 @@ class AssembleQueryBundleTests(unittest.TestCase):
             bundle["resultsByJobId"]["dish_catalog_current_snapshot"]["query"],
             self.manifest()["jobs"][1]["input"],
         )
+
+    def test_assembles_single_schema_responses(self) -> None:
+        manifest = self.manifest()
+        business = self.aggregate_page(rows=[{"store_name": "荣京道店", "order_revenue": "1000"}])
+        catalog = self.detail_page(rows=[])
+        _, bundle = self.run_bundle(
+            manifest=manifest,
+            responses={
+                "query-results/business_current_store_totals.json": business,
+                "query-results/dish_catalog_current_snapshot.json": catalog,
+            },
+        )
+
+        self.assertEqual(bundle["resultsByJobId"]["business_current_store_totals"]["dataset"], "business")
 
     def test_assembles_manifest_declared_responses_from_documented_run_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -515,10 +518,9 @@ class AssembleQueryBundleTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("ambiguous saved MCP wrapper", completed.stderr)
 
-    def test_dataset_registry_or_mode_mismatch_fails_closed(self) -> None:
+    def test_dataset_or_mode_mismatch_fails_closed(self) -> None:
         cases = [
             ("dataset", {"dataset": "dishes"}),
-            ("registryVersion", {"registryVersion": "business.2026-07-01.v1"}),
             ("mode", {"mode": "detail"}),
         ]
         for label, override in cases:
@@ -619,14 +621,12 @@ class AssembleQueryBundleTests(unittest.TestCase):
 [
   {
     "dataset": "business",
-    "registryVersion": "business.2026-09-04.v2",
     "mode": "aggregate",
     "rows": [{"store_name": "荣京道店", "party_size": 1, "order_revenue": "1000.50"}],
     "nextCursor": "cursor_page_2"
   },
   {
     "dataset": "business",
-    "registryVersion": "business.2026-09-04.v2",
     "mode": "aggregate",
     "rows": [{"store_name": "荣京道店", "party_size": 1.0, "order_revenue": "1200.00"}],
     "nextCursor": null
@@ -651,7 +651,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
         response_text = """
 {
   "dataset": "business",
-  "registryVersion": "business.2026-09-04.v2",
   "mode": "aggregate",
   "rows": [
     {
@@ -681,7 +680,6 @@ class AssembleQueryBundleTests(unittest.TestCase):
         response_text = """
 {
   "dataset": "business",
-  "registryVersion": "business.2026-09-04.v2",
   "mode": "aggregate",
   "rows": [{"store_name": "荣京道店", "order_revenue": NaN}],
   "nextCursor": null

@@ -1,6 +1,5 @@
 {
   "dataset": "dish_catalog",
-  "registryVersion": "dish_catalog.2026-08-22.v1",
   "metadataPolicy": "snapshot",
   "sources": [
     {

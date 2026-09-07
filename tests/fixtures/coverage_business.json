@@ -1,6 +1,5 @@
 {
   "dataset": "business",
-  "registryVersion": "business.2026-09-04.v2",
   "metadataPolicy": "window",
   "sources": [
     {

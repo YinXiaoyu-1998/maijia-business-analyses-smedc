@@ -86,14 +86,10 @@ class ContractFixtureTests(unittest.TestCase):
         )
 
     def test_coverage_fixtures_use_dataset_specific_source_shape(self) -> None:
-        registry = self.load_json("tests/fixtures/registry_response.json")
-        versions = {dataset["dataset"]: dataset["registryVersion"] for dataset in registry["datasets"]}
-
         for file_name in ["coverage_business.json", "coverage_dishes.json"]:
             with self.subTest(fixture=file_name):
                 coverage = json.loads((FIXTURES / file_name).read_text(encoding="utf-8"))
                 self.assertEqual(coverage["metadataPolicy"], "window")
-                self.assertEqual(coverage["registryVersion"], versions[coverage["dataset"]])
                 for source in coverage["sources"]:
                     self.assertIn("startDate", source)
                     self.assertIn("endDate", source)
@@ -103,7 +99,6 @@ class ContractFixtureTests(unittest.TestCase):
         catalog_coverage = self.load_json("tests/fixtures/coverage_dish_catalog.json")
         self.assertEqual(catalog_coverage["dataset"], "dish_catalog")
         self.assertEqual(catalog_coverage["metadataPolicy"], "snapshot")
-        self.assertEqual(catalog_coverage["registryVersion"], versions["dish_catalog"])
         for source in catalog_coverage["sources"]:
             self.assertIn("snapshotDate", source)
             self.assertNotIn("startDate", source)

@@ -1,147 +1,79 @@
 #!/usr/bin/env python3
-"""Render a self-contained Maijia weekly meeting report."""
+"""Render the original Maijia weekly meeting experience from SMEDC-derived facts."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+from html import escape
 from pathlib import Path
 from typing import Any
 
-from generate_business_report_html import (
-    chart_html,
-    html_page,
-    load_json,
-    metric_grid,
-    notices_html,
-    read_csv_rows,
-    section,
-    source_html,
-    table_html,
-)
+from generate_business_report_html import public_payload
+from meeting_report_weekly import HTML_TEMPLATE, build_payload
 
 
-def comparison_overall(rows: list[dict[str, str]]) -> dict[str, float | None]:
-    fields = [
-        "current_net_revenue",
-        "previous_net_revenue",
-        "yoy_net_revenue",
-        "wow_net_revenue_delta",
-        "yoy_net_revenue_delta",
-        "current_positive_orders",
-        "current_customer_count",
-        "current_open_rate",
-    ]
-    totals: dict[str, float | None] = {}
-    for field in fields:
-        if field.endswith("_rate"):
-            prefix = field[: -len("_open_rate")] if field.endswith("_open_rate") else field.rsplit("_", 1)[0]
-            weight_field = f"{prefix}_table_days"
-            weighted_sum = 0.0
-            denominator = 0.0
-            denominator_incomplete = False
-            for row in rows:
-                if row.get(field) in {"", None}:
-                    continue
-                try:
-                    value = float(row.get(field) or 0)
-                    weight = float(row.get(weight_field) or 0)
-                except ValueError:
-                    denominator_incomplete = True
-                    continue
-                if weight > 0:
-                    weighted_sum += value * weight
-                    denominator += weight
-                else:
-                    denominator_incomplete = True
-            totals[field] = round(weighted_sum / denominator, 4) if denominator > 0 and not denominator_incomplete else None
-        else:
-            values: list[float] = []
-            incomplete = not rows
-            for row in rows:
-                raw_value = row.get(field)
-                if raw_value in {"", None}:
-                    incomplete = True
-                    continue
-                try:
-                    values.append(float(raw_value))
-                except (TypeError, ValueError):
-                    incomplete = True
-            totals[field] = None if incomplete else round(sum(values), 2)
-    return totals
+def accessible_html(html: str) -> str:
+    """Add static accessibility metadata without changing the original interactions."""
+    html = re.sub(r"<table(?![^>]*\baria-label=)", '<table aria-label="经营事实表"', html)
+    html = re.sub(r"<th(?![a-z])(?![^>]*\bscope=)", '<th scope="col"', html)
+    return html
 
 
-def disabled_panel_messages(meta: dict[str, Any]) -> list[str]:
-    messages: list[str] = []
-    stall_meta = meta.get("stall_sales_mix")
-    if isinstance(stall_meta, dict) and not stall_meta.get("enabled", False):
-        messages.append(str(stall_meta.get("reason") or "档口和产品模块缺少可用事实表。"))
-    for key in ("product_sales_per_10k_order_revenue", "product_sales_per_10k_gross_sales"):
-        panel = meta.get(key)
-        if isinstance(panel, dict) and not panel.get("enabled", False):
-            reason = str(panel.get("reason") or "产品每万收入销量模块缺少可用事实表。")
-            if reason not in messages:
-                messages.append(reason)
-    return messages
+def presentation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep only report-facing data in the embedded payload."""
+    technical_keys = {"bundle", "coverage", "jobs", "output", "outputs", "outputContract"}
+
+    def scrub(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: scrub(item) for key, item in value.items() if key not in technical_keys}
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        return value
+
+    return public_payload(scrub(payload))
 
 
-def render_meeting_report(input_dir: Path, report_path: Path, *, summary_name: str, prefix: str, title: str, trend_label: str) -> dict[str, Any]:
-    summary_path = input_dir / summary_name
-    summary = load_json(summary_path)
-    meta = summary.get("meta", {})
-    comparison = read_csv_rows(input_dir / f"{prefix}_store_comparison.csv")
-    trend = read_csv_rows(input_dir / f"{prefix}_trend_comparison_metrics.csv")
-    channels = read_csv_rows(input_dir / f"{prefix}_store_channel_metrics.csv")
-    dayparts = read_csv_rows(input_dir / f"{prefix}_store_daypart_metrics.csv")
-    daypart_drivers = read_csv_rows(input_dir / f"{prefix}_store_daypart_driver_summary.csv")
-    stalls = read_csv_rows(input_dir / f"{prefix}_store_stall_sales_mix.csv")
-    stall_drivers = read_csv_rows(input_dir / f"{prefix}_store_stall_driver_summary.csv")
-    products = read_csv_rows(input_dir / f"{prefix}_store_product_sales_per_10k.csv")
-    store_segments = read_csv_rows(input_dir / "star_problem_stores.csv")
-    store_drivers = read_csv_rows(input_dir / "store_driver_summary.csv")
-    extra_notices = disabled_panel_messages(meta)
+def inject_missing_data_notice(html: str, messages: list[str]) -> str:
+    placeholder = '<div id="missingDataNotice" class="callout" hidden></div>'
+    if not messages:
+        return html
+    body = "；".join(escape(str(message)) for message in messages if str(message).strip())
+    if not body:
+        return html
+    notice = f'<div id="missingDataNotice" class="callout"><b>数据提示：</b>{body}</div>'
+    return html.replace(placeholder, notice)
 
-    sections = [
-        section("来源与覆盖", source_html(meta)),
-        section("数据边界通知", notices_html(summary.get("notices", []), extra_notices)),
-        section("本期 / 上期 / 同比", metric_grid(comparison_overall(comparison), ["current_net_revenue", "previous_net_revenue", "yoy_net_revenue", "wow_net_revenue_delta", "yoy_net_revenue_delta", "current_positive_orders", "current_customer_count", "current_open_rate"])),
-        section(
-            "趋势",
-            chart_html(trend, trend_label, "net_revenue", "趋势收入柱状图")
-            + table_html("趋势事实表", trend, [trend_label, "series_label", "门店名称", "net_revenue", "gross_sales", "positive_orders", "open_rate"]),
-            "trend-section",
-        ),
-        section("门店象限 / 排名", table_html("门店象限事实表", store_segments, ["门店名称", "store_size_bucket", "store_segment"]) + table_html("门店排名驱动事实表", store_drivers, ["门店名称", "basis", "net_revenue_delta", "net_revenue_pct", "driver_signal"])),
-        section("门店对比明细", table_html("门店对比明细表", comparison, ["门店名称", "store_size_bucket", "store_segment", "current_net_revenue", "previous_net_revenue", "yoy_net_revenue", "wow_net_revenue_pct", "yoy_net_revenue_pct"])),
-        section("渠道结构", table_html("渠道结构事实表", channels, ["门店名称", "period", "channel", "net_revenue", "gross_sales", "positive_orders", "post_discount_aov"])),
-        section("餐段 / 时段", table_html("餐段时段事实表", dayparts, ["门店名称", "period", "餐段", "时段", "net_revenue", "positive_orders", "post_discount_aov"]) + table_html("餐段时段驱动表", daypart_drivers, ["门店名称", "top_current_daypart", "top_current_time_slot", "top_current_net_revenue", "daypart_signal"])),
-        section("档口销售占比", table_html("档口销售占比事实表", stalls, ["门店名称", "档口", "stall_income", "quantity", "share"], "缺少菜品主题数据或菜品库，未生成档口占比。") + table_html("档口驱动事实表", stall_drivers, ["门店名称", "档口", "stall_income", "quantity", "share"], "缺少菜品主题数据或菜品库，未生成档口驱动。")),
-        section("产品每万收入销量", table_html("产品每万收入销量事实表", products, ["门店名称", "产品名称", "销售分类", "档口", "quantity", "order_revenue", "units_per_10k"], "缺少菜品主题数据或菜品库，未生成产品每万收入销量。")),
-        section("产品每万流水销量", table_html("产品每万流水销量事实表", products, ["门店名称", "产品名称", "销售分类", "档口", "quantity", "gross_sales", "units_per_10k_gross_sales"], "缺少菜品主题数据或菜品库，未生成产品每万流水销量。")),
-    ]
-    subtitle = "从 Enterprise Hub 查询包派生的会议事实表，所有图表、表格和数据边界说明均封装在单个 HTML 文件中。"
+
+def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
+    summary_path = input_dir / "weekly_meeting_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    payload = build_payload(input_dir, "麦家小馆")
+    html = HTML_TEMPLATE.replace("__TITLE__", str(payload["meta"]["title"]))
+    html = html.replace("麦家小馆周经营会报", "麦家小馆周会经营报告")
+    html = html.replace(
+        '<script id="payload" type="application/json">',
+        '<script type="application/json" id="report-data">',
+    )
+    html = html.replace("getElementById('payload')", "getElementById('report-data')")
+    html = html.replace(
+        "__PAYLOAD__",
+        json.dumps(presentation_payload(payload), ensure_ascii=False).replace("<", "\\u003c").replace("&", "\\u0026"),
+    )
+    html = inject_missing_data_notice(html, list(payload.get("data_gaps", [])))
+    html = accessible_html(html)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(html_page(title, subtitle, "".join(sections), summary), encoding="utf-8")
+    report_path.write_text(html, encoding="utf-8")
     return {
         "artifacts": {
             "report": str(report_path),
             "summary": str(summary_path),
-            "facts": [name for name in meta.get("outputs", []) if str(name).endswith(".csv")],
+            "facts": [name for name in payload.get("meta", {}).get("outputs", []) if str(name).endswith(".csv")],
         },
-        "notices": summary.get("notices", []),
+        "notices": summary.get("data_gaps", []),
     }
-
-
-def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
-    return render_meeting_report(
-        input_dir,
-        report_path,
-        summary_name="weekly_meeting_summary.json",
-        prefix="weekly",
-        title="麦家小馆周会经营报告",
-        trend_label="week_label",
-    )
 
 
 def parse_args() -> argparse.Namespace:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sys
+from calendar import monthrange
 from pathlib import Path
 from typing import Any
 
@@ -12,13 +13,16 @@ from report_common import (
     COMPARISON_METRICS,
     METRIC_FIELDS,
     channel_rows,
+    classify_stores,
     comparison_rows,
+    daypart_comparison_rows,
     daypart_driver_rows,
     daypart_rows,
     driver_rows,
     job_metadata,
     load_bundle,
     parse_bundle_cli,
+    report_gap_messages,
     rows_for,
     stall_and_product_outputs,
     store_metric_rows,
@@ -62,9 +66,18 @@ def trend_rows(bundle: dict[str, Any]) -> list[dict[str, Any]]:
                     },
                 )
             )
-    rows.sort(key=lambda item: (item["month_label"], item["series_key"], item["门店名称"]))
-    for index, row in enumerate(rows, start=1):
-        row["window_index"] = index
+    for series_key in ("prior_year", "current_year"):
+        labels = sorted({row["month_label"] for row in rows if row["series_key"] == series_key})
+        indexes = {label: index for index, label in enumerate(labels, start=1)}
+        for row in rows:
+            if row["series_key"] != series_key:
+                continue
+            row["window_index"] = indexes[row["month_label"]]
+            label = str(row["month_label"])
+            if len(label) == 7:
+                year, month = (int(part) for part in label.split("-"))
+                row["month_end"] = f"{label}-{monthrange(year, month)[1]:02d}"
+    rows.sort(key=lambda item: (item["window_index"], item["series_key"], item["门店名称"]))
     return rows
 
 
@@ -77,12 +90,21 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
     yoy_store = rows_for(bundle, "business_yoy_store_totals")
 
     monthly_rows = trend_rows(bundle)
-    channels = channel_rows(rows_for(bundle, "business_current_channel_platform_mix"), PERIOD_LABELS["current"])
-    dayparts = daypart_rows(rows_for(bundle, "business_current_daypart_mix"), PERIOD_LABELS["current"])
-    daypart_drivers = daypart_driver_rows(dayparts)
+    channels = [
+        row
+        for period, label in PERIOD_LABELS.items()
+        for row in channel_rows(rows_for(bundle, f"business_{period}_channel_platform_mix"), label)
+    ]
+    dayparts = [
+        row
+        for period, label in PERIOD_LABELS.items()
+        for row in daypart_rows(rows_for(bundle, f"business_{period}_daypart_mix"), label)
+    ]
+    daypart_comparisons = daypart_comparison_rows(dayparts, PERIOD_LABELS)
+    daypart_drivers = daypart_driver_rows(daypart_comparisons)
     comparisons = comparison_rows(current_store, previous_store, yoy_store)
+    store_segments = classify_stores(comparisons, "本月")
     drivers = driver_rows(comparisons)
-    store_segments = [{"门店名称": row["门店名称"], "store_size_bucket": row["store_size_bucket"], "store_segment": row["store_segment"]} for row in comparisons]
     stall_meta = stall_and_product_outputs(
         output_dir=output_dir,
         prefix="monthly",
@@ -90,17 +112,21 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
         current_store_rows=current_store,
         dish_rows=rows_for(bundle, "dishes_current_product_totals"),
         catalog_rows=rows_for(bundle, "dish_catalog_current_snapshot"),
+        comparison_dish_rows={
+            period: rows_for(bundle, f"dishes_{period}_product_totals")
+            for period in PERIOD_LABELS
+        },
     )
 
     write_csv(output_dir / "monthly_store_metrics.csv", monthly_rows, ["series_key", "series_label", "window_index", "month_start", "month_end", "month_label", "门店名称"] + METRIC_FIELDS)
     write_csv(output_dir / "monthly_store_channel_metrics.csv", channels, ["门店名称", "period", "channel"] + METRIC_FIELDS)
     write_csv(output_dir / "monthly_store_daypart_metrics.csv", dayparts, ["门店名称", "period", "餐段", "时段"] + METRIC_FIELDS)
-    write_csv(output_dir / "monthly_store_daypart_comparison.csv", dayparts, ["门店名称", "period", "餐段", "时段"] + METRIC_FIELDS)
-    write_csv(output_dir / "monthly_store_daypart_driver_summary.csv", daypart_drivers, ["门店名称", "top_current_daypart", "top_current_time_slot", "top_current_net_revenue", "daypart_signal"])
+    write_csv(output_dir / "monthly_store_daypart_comparison.csv", daypart_comparisons, list(daypart_comparisons[0]) if daypart_comparisons else ["门店名称", "餐段", "时段"])
+    write_csv(output_dir / "monthly_store_daypart_driver_summary.csv", daypart_drivers, list(daypart_drivers[0]) if daypart_drivers else ["门店名称", "basis"])
     write_csv(output_dir / "monthly_trend_comparison_metrics.csv", monthly_rows, ["series_key", "series_label", "window_index", "month_start", "month_end", "month_label", "门店名称"] + METRIC_FIELDS)
     write_csv(output_dir / "monthly_store_comparison.csv", comparisons, comparison_fieldnames())
-    write_csv(output_dir / "store_driver_summary.csv", drivers, ["门店名称", "basis", "net_revenue_delta", "net_revenue_pct", "driver_signal"])
-    write_csv(output_dir / "star_problem_stores.csv", store_segments, ["门店名称", "store_size_bucket", "store_segment"])
+    write_csv(output_dir / "store_driver_summary.csv", drivers, list(drivers[0]) if drivers else ["门店名称", "basis"])
+    write_csv(output_dir / "star_problem_stores.csv", store_segments, list(store_segments[0]) if store_segments else ["门店名称", "segment"])
 
     outputs = [
         "monthly_store_metrics.csv",
@@ -120,13 +146,16 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
             "report_grain": "month",
             "bundle": str(bundle_path),
             "target_windows": bundle["report"]["windows"],
-            "registryVersions": bundle.get("registryVersions", {}),
             "coverage": bundle.get("coverage", {}),
             "jobs": job_metadata(bundle),
             "outputContract": bundle.get("outputContract"),
             "store_count": len({row["门店名称"] for row in comparisons}),
             "outputs": outputs,
             "stall_sales_mix": stall_meta,
+            "daypart_attribution": {
+                "enabled": bool(daypart_comparisons and daypart_drivers),
+                "basis": "按门店、餐段和时段比较本月、上月与去年同月的订单营业收入。",
+            },
             "product_sales_per_10k": stall_meta.get("product_sales_per_10k", {}),
             "product_sales_per_10k_order_revenue": stall_meta.get("product_sales_per_10k_order_revenue", {}),
             "product_sales_per_10k_gross_sales": stall_meta.get("product_sales_per_10k_gross_sales", {}),
@@ -135,11 +164,21 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
         "drivers": drivers,
         "store_segments": store_segments,
         "channel_current": channels,
-        "daypart_current_previous": dayparts,
+        "daypart_current_previous": daypart_comparisons,
         "monthly_trend": monthly_rows,
         "monthly_trend_comparison": monthly_rows,
         "notices": bundle.get("notices", []),
-        "data_gaps": [notice["code"] for notice in bundle.get("notices", []) if isinstance(notice, dict) and notice.get("code")],
+        "data_gaps": report_gap_messages(
+            bundle.get("notices", []),
+            has_current=bool(current_store),
+            has_previous=bool(previous_store),
+            has_yoy=bool(yoy_store),
+            has_trend=bool(monthly_rows),
+            has_channels=any(row.get("period") == PERIOD_LABELS["current"] for row in channels),
+            has_dayparts=any(row.get("period") == PERIOD_LABELS["current"] for row in dayparts),
+            has_dishes=bool(rows_for(bundle, "dishes_current_product_totals")),
+            has_catalog=bool(rows_for(bundle, "dish_catalog_current_snapshot")),
+        ),
     }
     write_json(output_dir / "monthly_meeting_summary.json", summary)
     return summary
