@@ -304,6 +304,31 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertNotIn("COVERAGE_", html)
         self.assertNotIn("business_current_store_totals", html)
 
+    def test_weekly_report_hides_all_analysis_when_only_historical_data_exists(self) -> None:
+        bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))
+        for job_id, result in bundle["resultsByJobId"].items():
+            if "_current_" in job_id or "_previous_" in job_id:
+                result["rows"] = []
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "historical-only-bundle.json"
+        bundle_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        profile = run_script("scripts/profile_weekly_data.py", "--bundle", str(bundle_path), "--output-dir", str(output_dir))
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        report_path = output_dir / "historical-only.html"
+        rendered = run_script("scripts/generate_weekly_report_html.py", "--input-dir", str(output_dir), "--report", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        html = report_path.read_text(encoding="utf-8")
+
+        self.assertFalse(embedded_payload(html)["availability"]["current"])
+        self.assertIn(
+            "['summary', 'ranking', 'stores', 'channels', 'stall-mix', 'product-sales-per-10k', "
+            "'drivers', 'stall-drivers', 'daypart-drivers', 'dayparts'].forEach(hideSection);",
+            html,
+        )
+
     def test_monthly_report_can_render_when_every_query_returns_no_rows(self) -> None:
         bundle = json.loads((FIXTURES / "monthly_bundle.json").read_text(encoding="utf-8"))
         bundle["notices"] = []
