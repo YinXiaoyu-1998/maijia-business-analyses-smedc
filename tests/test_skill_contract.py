@@ -60,6 +60,17 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("python3 scripts/build_query_plan.py", self.skill_text)
         self.assertIn("python3 scripts/assemble_query_bundle.py", self.skill_text)
 
+    def test_skill_honors_explicit_report_periods(self) -> None:
+        for phrase in [
+            "Never replace an explicitly requested period",
+            "exactly 7 days before",
+            "exactly 364 days before",
+            "previous calendar month",
+            "same calendar month one year earlier",
+        ]:
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.skill_text)
+
     def test_skill_specifies_tool_order_pagination_and_response_filenames(self) -> None:
         ordered_markers = [
             "Use `enterprise-hub-mcp`",

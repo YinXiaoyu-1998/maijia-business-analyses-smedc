@@ -43,6 +43,12 @@ Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meetin
 
 5. Run `python3 scripts/build_query_plan.py` with the requested report type and date windows:
 
+   Resolve the report period from the user's request before calculating any comparison window. Never replace an explicitly requested period with today's date, the latest complete period, or the end of available data. If the user does not specify a period, state the default period you selected before querying.
+
+   - For a weekly report, pass the requested inclusive start and end as `current`. Derive `previous` by moving both dates exactly 7 days before `current`, and derive `yoy` by moving both dates exactly 364 days before `current` so weekdays remain aligned.
+   - For a monthly report, use the requested calendar month as `current`, the previous calendar month as `previous`, and the same calendar month one year earlier as `yoy`.
+   - Data coverage decides which report modules can be shown; it must never change the requested reporting period.
+
    ```bash
    python3 scripts/build_query_plan.py \
      --report-type weekly \
