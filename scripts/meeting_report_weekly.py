@@ -1996,11 +1996,11 @@ HTML_TEMPLATE = r'''<!doctype html>
       const availability = data.availability || {};
       if (!availability.current) {
         document.querySelector('.hero .summary').hidden = true;
-        ['summary', 'ranking', 'stores', 'channels', 'drivers'].forEach(hideSection);
-      } else {
-        if (!availability.trend) document.getElementById('trend').closest('.panel').hidden = true;
-        if (!availability.channels) hideSection('channels');
+        ['summary', 'ranking', 'stores', 'channels', 'stall-mix', 'product-sales-per-10k', 'drivers', 'stall-drivers', 'daypart-drivers', 'dayparts'].forEach(hideSection);
+        return;
       }
+      if (!availability.trend) document.getElementById('trend').closest('.panel').hidden = true;
+      if (!availability.channels) hideSection('channels');
       if (!data.stall_sales_mix?.enabled) hideSection('stall-mix');
       if (![data.product_sales_per_10k_order_revenue, data.product_sales_per_10k_gross_sales].some(panel => panel?.enabled)) hideSection('product-sales-per-10k');
       if (!data.stall_attribution?.enabled) hideSection('stall-drivers');
