@@ -23,9 +23,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        summary = profile(args.bundle, args.output_dir)
+        profile(args.bundle, args.output_dir)
         result = render(args.output_dir, args.report)
-        result["notices"] = summary.get("notices", [])
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

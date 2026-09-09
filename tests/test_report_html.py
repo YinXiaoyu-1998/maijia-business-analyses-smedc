@@ -76,7 +76,7 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertEqual(Path(result["artifacts"]["report"]), report_path)
         return report_path, report_path.read_text(encoding="utf-8"), json.loads((output_dir / summary_name).read_text(encoding="utf-8"))
 
-    def test_diagnosis_report_renders_source_facts_tables_and_notices(self) -> None:
+    def test_diagnosis_report_renders_business_charts_without_technical_provenance(self) -> None:
         _, html, summary = self.render_from_profile(
             "profile_business_data.py",
             "generate_business_report_html.py",
@@ -88,18 +88,17 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("麦家小馆经营诊断", html)
         self.assertIn("2026-07-01", html)
         self.assertIn("2026-07-07", html)
-        self.assertIn("doc_diagnosis_business", html)
-        self.assertIn("OPTIONAL_MODULE_MISSING", html)
-        self.assertIn("核心 KPI", html)
-        self.assertIn("门店对比", html)
-        self.assertIn("渠道 / 平台", html)
-        self.assertIn("会员结构", html)
-        self.assertIn("支付 / 来源", html)
-        self.assertIn("餐段效率", html)
+        self.assertNotIn("doc_diagnosis_business", html)
+        self.assertNotIn("OPTIONAL_MODULE_MISSING", html)
+        self.assertIn("订单营业收入", html)
+        self.assertIn("门店组合", html)
+        self.assertIn("渠道结构", html)
+        self.assertIn("会员与非会员", html)
+        self.assertIn("机会池", html)
+        self.assertIn("餐段机会", html)
         self.assertIn("荣京道店", html)
         self.assertIn("龙玥城店", html)
         self.assertIn("店内销售", html)
-        self.assertIn("扫码支付", html)
         self.assertIn("午餐", html)
         self.assertIn("8000", html)
         self.assertEqual(summary["overall_kpis"]["net_revenue"], 8000.0)

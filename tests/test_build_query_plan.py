@@ -290,6 +290,20 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertEqual(aggregate_ops["weighted_turnover_rate"], "weightedAvg")
         self.assertEqual(kpi_job["input"]["page"]["limit"], 200)
 
+    def test_diagnosis_queries_months_and_hours_provided_by_smedc(self) -> None:
+        manifest = self.run_plan(report_type="diagnosis")
+        ids = set(self.job_ids(manifest))
+        self.assertIn("business_current_monthly_trend", ids)
+        self.assertEqual(self.job(manifest, "business_current_monthly_trend")["input"]["groupBy"], ["store_name", "business_month"])
+        self.assertEqual(self.job(manifest, "business_current_efficiency")["input"]["groupBy"], ["store_name", "meal_period", "time_slot"])
+
+    def test_weekly_trend_queries_daily_income_without_assuming_export_week_format(self) -> None:
+        manifest = self.run_plan(report_type="weekly", current_start="2026-07-19", current_end="2026-07-25")
+        query = self.job(manifest, "business_16_week_store_trend")["input"]
+        self.assertEqual(query["groupBy"], ["store_name", "business_date"])
+        self.assertEqual(query["filter"]["value"][1], "2026-07-25")
+        self.assertEqual(query["aggregates"], [{"op": "sum", "field": "order_revenue", "as": "order_revenue"}])
+
     def test_weekly_full_history_queries_all_comparison_dimensions_and_both_trend_series(self) -> None:
         manifest = self.run_plan(
             report_type="weekly",
@@ -305,7 +319,7 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertIn("business_16_week_prior_year_store_trend", ids)
         self.assertEqual(
             manifest["report"]["trendWindows"]["priorYear"],
-            {"start": "2025-04-07", "end": "2025-07-27"},
+            {"start": "2025-04-11", "end": "2025-07-31"},
         )
 
     def test_weekly_manifest_includes_comparisons_trend_and_optional_dish_modules(self) -> None:
@@ -329,11 +343,11 @@ class BuildQueryPlanTests(unittest.TestCase):
             },
         )
         trend = self.job(manifest, "business_16_week_store_trend")
-        self.assertEqual(trend["input"]["groupBy"], ["store_name", "business_week"])
+        self.assertEqual(trend["input"]["groupBy"], ["store_name", "business_date"])
         self.assertEqual(trend["input"]["filter"]["field"], "business_date")
         self.assertEqual(trend["input"]["filter"]["op"], "between")
-        self.assertEqual(trend["input"]["filter"]["value"], ["2026-04-06", "2026-07-26"])
-        self.assertEqual(manifest["report"]["trendWindows"]["current"], {"start": "2026-04-06", "end": "2026-07-26"})
+        self.assertEqual(trend["input"]["filter"]["value"], ["2026-04-11", "2026-07-31"])
+        self.assertEqual(manifest["report"]["trendWindows"]["current"], {"start": "2026-04-11", "end": "2026-07-31"})
         catalog = self.job(manifest, "dish_catalog_current_snapshot")
         self.assertEqual(catalog["input"]["sort"][0], {"field": "snapshot_date", "direction": "desc"})
         self.assertEqual(catalog["input"]["page"]["limit"], 200)
@@ -441,7 +455,7 @@ class BuildQueryPlanTests(unittest.TestCase):
         )
         self.assertFalse(any("profit" in job["id"] for job in manifest["jobs"]))
 
-    def test_trend_windows_align_to_complete_natural_buckets(self) -> None:
+    def test_weekly_trends_honor_requested_end_and_monthly_trends_use_complete_months(self) -> None:
         weekly = self.run_plan(
             report_type="weekly",
             current_start="2026-07-01",
@@ -458,8 +472,8 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertEqual(
             weekly["report"]["trendWindows"],
             {
-                "current": {"start": "2026-04-06", "end": "2026-07-26"},
-                "priorYear": {"start": "2025-04-07", "end": "2025-07-27"},
+                "current": {"start": "2026-04-09", "end": "2026-07-29"},
+                "priorYear": {"start": "2025-04-11", "end": "2025-07-31"},
             },
         )
         self.assertEqual(
@@ -559,7 +573,7 @@ class BuildQueryPlanTests(unittest.TestCase):
                 "dataset": "business",
                 "window": "trend",
                 "module": "weeklyTrend",
-                "gaps": [{"startDate": "2026-04-06", "endDate": "2026-06-30"}],
+                "gaps": [{"startDate": "2026-04-11", "endDate": "2026-06-30"}],
             },
             weekly["notices"],
         )

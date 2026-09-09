@@ -154,13 +154,16 @@ def build_trend_comparison_entities(rows: list[dict[str, Any]]) -> list[dict[str
                 },
             )
             series_key = str(row.get("series_key") or "")
-            revenue = float(row.get("net_revenue") or 0)
+            revenue = float(row["net_revenue"]) if row.get("net_revenue") is not None else None
             week_range = f"{row.get('week_start')}-{row.get('week_end')}"
             if series_key == "current_year":
-                item["current_net_revenue"] = round((item["current_net_revenue"] or 0) + revenue, 2)
+                item["week_label"] = row.get("month_label") or row.get("week_label") or ""
+                if revenue is not None:
+                    item["current_net_revenue"] = round((item["current_net_revenue"] or 0) + revenue, 2)
                 item["current_week_range"] = week_range
             elif series_key == "prior_year":
-                item["prior_net_revenue"] = round((item["prior_net_revenue"] or 0) + revenue, 2)
+                if revenue is not None:
+                    item["prior_net_revenue"] = round((item["prior_net_revenue"] or 0) + revenue, 2)
                 item["prior_week_range"] = week_range
         return [groups[index] for index in sorted(groups)]
 
@@ -1470,15 +1473,18 @@ HTML_TEMPLATE = r'''<!doctype html>
         const values = points.map(([, , , value]) => value);
         const minValue = Math.min(...values), maxValue = Math.max(...values);
         const hasDistinctExtremes = points.length > 1 && minValue !== maxValue;
-        root.appendChild(svg('polyline', {
-          points: points.map(p=>`${p[0]},${p[1]}`).join(' '),
-          fill: 'none',
-          stroke: color,
-          'stroke-width': 3,
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
+        const segments = [];
+        points.forEach(point => {
+          const last = segments[segments.length - 1];
+          if (!last || point[4] !== last[last.length - 1][4] + 1) segments.push([point]);
+          else last.push(point);
+        });
+        segments.forEach(segment => root.appendChild(svg('polyline', {
+          points: segment.map(p=>`${p[0]},${p[1]}`).join(' '),
+          fill: 'none', stroke: color, 'stroke-width': 3,
+          'stroke-linecap': 'round', 'stroke-linejoin': 'round',
           ...(dash ? {'stroke-dasharray': dash} : {})
-        }));
+        })));
         points.forEach(([x,y,r,value], i) => {
           const isMin = hasDistinctExtremes && value === minValue;
           const isMax = hasDistinctExtremes && value === maxValue;

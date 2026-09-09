@@ -129,12 +129,8 @@ def build_windows(args: argparse.Namespace) -> dict[str, DateWindow]:
 
 
 def subtract_months(value: date, months: int) -> date:
-    year = value.year
-    month = value.month - months
-    while month <= 0:
-        month += 12
-        year -= 1
-    return date(year, month, 1)
+    year, month = divmod(value.year * 12 + value.month - 1 - months, 12)
+    return date(year, month + 1, 1)
 
 
 def month_end(year: int, month: int) -> date:
@@ -151,9 +147,7 @@ def same_date_previous_year(value: date) -> date:
 
 
 def weekly_trend_window(current_end: date) -> DateWindow:
-    days_since_sunday = (current_end.weekday() + 1) % 7
-    end = current_end - timedelta(days=days_since_sunday)
-    return DateWindow("trend", end - timedelta(days=(16 * 7) - 1), end)
+    return DateWindow("trend", current_end - timedelta(days=(16 * 7) - 1), current_end)
 
 
 def monthly_trend_window(current_end: date) -> DateWindow:
@@ -744,7 +738,6 @@ def build_plan(
 ) -> dict[str, Any]:
     business_date = require_field(config, registry, "business.date", "filter").canonical
     business_store = require_field(config, registry, "business.store", "group").canonical
-    business_week = require_field(config, registry, "business.week", "group").canonical
     business_month = require_field(config, registry, "business.month", "group").canonical
     order_category = require_field(config, registry, "business.orderCategory", "group").canonical
     order_source = require_field(config, registry, "business.orderSource", "group").canonical
@@ -774,6 +767,7 @@ def build_plan(
         output_file: str,
         *,
         notice_partial: bool = False,
+        daily_trend: bool = False,
     ) -> None:
         add_if_covered(
             jobs,
@@ -787,7 +781,7 @@ def build_plan(
                 window=window,
                 date_field=business_date,
                 group_by=group_by,
-                aggregates=business_aggs,
+                aggregates=[{"op": "sum", "field": require_field(config, registry, "business.orderRevenue", "aggregate").canonical, "as": "order_revenue"}] if daily_trend else business_aggs,
                 output_file=output_file,
                 limits=limits,
             ),
@@ -796,7 +790,7 @@ def build_plan(
             module=module,
             notice_partial=notice_partial,
         )
-        if jobs and jobs[-1]["id"] == job_id:
+        if not daily_trend and jobs and jobs[-1]["id"] == job_id:
             for suffix, aggregates in business_supplemental_sets:
                 jobs.append(
                     aggregate_job(
@@ -855,17 +849,18 @@ def build_plan(
             (
                 "business_current_efficiency",
                 "operatingEfficiency",
-                [business_store, meal_period],
+                [business_store, meal_period, time_slot],
                 "business_current_efficiency",
             ),
         ]
+        diagnosis_jobs.append(("business_current_monthly_trend", "monthlyTrend", [business_store, business_month], "business_current_monthly_trend"))
         for job_id, module, group_by, output_file in diagnosis_jobs:
             add_business(job_id, module, "current", group_by, output_file)
     else:
         if report_type == "weekly":
             trend_window = weekly_trend_window(windows["current"].end)
             trend_id = "business_16_week_store_trend"
-            trend_group = [business_store, business_week]
+            trend_group = [business_store, require_field(config, registry, "business.date", "group").canonical]
             trend_module = "weeklyTrend"
         else:
             trend_window = monthly_trend_window(windows["current"].end)
@@ -873,13 +868,13 @@ def build_plan(
             trend_group = [business_store, business_month]
             trend_module = "monthlyTrend"
         trend_windows["current"] = trend_window.as_json()
-        add_business_window(trend_id, trend_module, trend_window, trend_group, trend_id, notice_partial=True)
+        add_business_window(trend_id, trend_module, trend_window, trend_group, trend_id, notice_partial=True, daily_trend=report_type == "weekly")
 
         prior_window = (
             DateWindow(
                 "prior_year_trend",
-                trend_window.start - timedelta(days=52 * 7),
-                trend_window.end - timedelta(days=52 * 7),
+                windows["yoy"].end - timedelta(days=(16 * 7) - 1),
+                windows["yoy"].end,
             )
             if report_type == "weekly"
             else DateWindow(
@@ -901,6 +896,7 @@ def build_plan(
             trend_group,
             prior_trend_id,
             notice_partial=True,
+            daily_trend=report_type == "weekly",
         )
 
         for window_name in WINDOW_NAMES:

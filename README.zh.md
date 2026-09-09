@@ -2,7 +2,7 @@
 
 这是面向麦家经营诊断、周报和月报的 Enterprise Hub 结构化数据 reporting skill。
 
-本仓库是受原 [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill 启发的 Enterprise Hub-backed 派生设计。当前未检测到 upstream source 暴露 license metadata，因此本仓库不声明继承 upstream license。后续实现将在本仓库内独立完成，并采用本仓库自己的 MIT 许可，见 [LICENSE](LICENSE)。
+本仓库将原 [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill 的报告展示和交互适配到 Enterprise Hub 查询结果，由版权持有人按本仓库的 MIT 许可发布，见 [LICENSE](LICENSE)。
 
 本 skill 使用 `enterprise-hub-mcp-launcher@0.2.7`，并通过用户已认证的 Enterprise Hub MCP tools 获取结构化 dataset registry、coverage 和 query 结果。
 
@@ -48,6 +48,14 @@ git clone https://github.com/YinXiaoyu-1998/maijia-business-analyses-smedc.git ~
 7. 保留 registry、coverage、manifest、raw query responses、bundle、facts 和 HTML report 作为 provenance；只清理不影响审计的 scratch 文件。
 
 coverage 缺口或可选 job 失败应生成带 notice 的 partial report，不应补造事实或归因为服务故障。
+
+## 报表口径
+
+- 周趋势使用截至用户指定报告结束日的连续 16 个七天窗口；月趋势按自然月定位。缺失期间保留空位，不改变今年与去年同期的对齐关系。更新后须重新生成查询计划并取数：周收入趋势改为查询每日收入，只有原表周标签的旧查询包不能代替日期粒度输入。
+- 产品销量优先按关联菜品名称归并，缺失时使用销售菜品名称，并区分堂食、外卖。销售名称保留为搜索别名，两种万元销量继续使用对应门店范围的全渠道分母。
+- 档口匹配先查销售菜品名称，再用关联名称补救。同名多分类不能互相覆盖，无法唯一解析的冲突归入未匹配。
+- 经营诊断恢复 KPI、月趋势、门店组合、渠道与会员、时段热力图及机会池。门店在同规模组内比较；机会池是明确假设下的情景测算，不是承诺收益。
+- 本 skill 与 Enterprise Hub 强绑定。如果服务缺少必要字段或维度，暂缓对应能力并说明缺少的业务信息，不读取本地工作簿替代、不推测数值，也不为复刻效果擅自扩展服务。利润报表仍不在范围内。
 
 ## 当前合同文件
 

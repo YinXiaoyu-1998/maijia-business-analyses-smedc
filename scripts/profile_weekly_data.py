@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from build_query_plan import weekly_trend_window
+
 from report_common import (
+    aggregate_rows,
     COMPARISON_METRICS,
     METRIC_FIELDS,
     channel_rows,
@@ -46,38 +50,39 @@ def comparison_fieldnames() -> list[str]:
 
 
 def trend_rows(bundle: dict[str, Any]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for job_id, series_key in (
-        ("business_16_week_prior_year_store_trend", "prior_year"),
-        ("business_16_week_store_trend", "current_year"),
+    """Sum daily service income into fixed requested-week positions, retaining gaps."""
+    groups: dict[tuple[str, str, int], list[dict[str, Any]]] = defaultdict(list)
+    windows = bundle["report"]["windows"]
+    frames = {}
+    for job_id, series, period in (
+        ("business_16_week_prior_year_store_trend", "prior_year", "yoy"),
+        ("business_16_week_store_trend", "current_year", "current"),
     ):
-        sources = rows_for(bundle, job_id)
-        labels = sorted({str(source.get("business_week") or "未知周") for source in sources})
-        indexes = {label: index for index, label in enumerate(labels, start=1)}
-        for source in sources:
-            label = str(source.get("business_week") or "未知周")
-            start: date | None = None
-            if len(label) >= 8 and "W" in label:
-                try:
-                    year, week = label.split("-W", 1)
-                    start = date.fromisocalendar(int(year), int(week), 1)
-                except (ValueError, TypeError):
-                    start = None
-            rows.extend(
-                store_metric_rows(
-                    [source],
-                    {
-                        "series_key": series_key,
-                        "series_label": label[:4],
-                        "window_index": indexes[label],
-                        "week_start": start.isoformat() if start else None,
-                        "week_end": (start + timedelta(days=6)).isoformat() if start else None,
-                        "week_label": label,
-                    },
-                )
-            )
-    rows.sort(key=lambda item: (item["window_index"], item["series_key"], item["门店名称"]))
-    return rows
+        frame = weekly_trend_window(date.fromisoformat(windows[period]["end"]))
+        frames[series] = frame
+        for source in rows_for(bundle, job_id):
+            try:
+                day = date.fromisoformat(str(source.get("business_date") or "")[:10].replace("/", "-"))
+            except ValueError:
+                continue
+            if frame.start <= day <= frame.end:
+                index = (day - frame.start).days // 7 + 1
+                groups[(series, str(source.get("store_name") or "未知门店"), index)].append(source)
+    stores = sorted({store for _, store, _ in groups})
+    output = []
+    for index in range(1, 17):
+        for series, frame in frames.items():
+            start = frame.start + timedelta(days=(index - 1) * 7)
+            end = start + timedelta(days=6)
+            for store in stores:
+                # Only additive daily income is queried for this chart; ratios remain unknown.
+                source = {"store_name": store, **aggregate_rows(groups.get((series, store, index), []))}
+                output.extend(store_metric_rows([source], {
+                    "series_key": series, "series_label": str(frame.end.year), "window_index": index,
+                    "week_start": start.isoformat(), "week_end": end.isoformat(),
+                    "week_label": f"{start:%m/%d}-{end:%m/%d}",
+                }))
+    return output
 
 
 def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:

@@ -50,13 +50,16 @@ def build_trend_comparison_entities(rows: list[dict[str, Any]]) -> list[dict[str
                 },
             )
             series_key = str(row.get("series_key") or "")
-            revenue = float(row.get("net_revenue") or 0)
+            revenue = float(row["net_revenue"]) if row.get("net_revenue") is not None else None
             month_range = f"{row.get('month_start')}-{row.get('month_end')}"
             if series_key == "current_year":
-                item["current_net_revenue"] = round((item["current_net_revenue"] or 0) + revenue, 2)
+                item["week_label"] = row.get("month_label") or row.get("week_label") or ""
+                if revenue is not None:
+                    item["current_net_revenue"] = round((item["current_net_revenue"] or 0) + revenue, 2)
                 item["current_week_range"] = month_range
             elif series_key == "prior_year":
-                item["prior_net_revenue"] = round((item["prior_net_revenue"] or 0) + revenue, 2)
+                if revenue is not None:
+                    item["prior_net_revenue"] = round((item["prior_net_revenue"] or 0) + revenue, 2)
                 item["prior_week_range"] = month_range
         return [groups[index] for index in sorted(groups)]
 

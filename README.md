@@ -49,6 +49,14 @@ Excluded by design:
 
 Missing coverage or failed optional jobs should become partial or empty reports, not fabricated facts or service-health claims. Unsupported modules are hidden; the report uses short business-language notices and does not display query jobs, source files, IDs, coverage tables, or internal error codes.
 
+## Reporting semantics
+
+- Weekly trends use sixteen seven-day windows ending on the requested report end date. Monthly trends use calendar-month positions. Missing periods remain gaps and never shift current/prior-year alignment. After updating, regenerate the manifest and query responses: weekly income trends now query daily income, so old bundles containing only export week labels cannot supply the new date-grained input.
+- Product quantity is grouped by linked product name (falling back to sales product name) and sales class. Display names remain searchable aliases; both per-10K denominators retain their all-channel basis.
+- Catalog resolution tries the sales name first and the linked name second. Conflicting categories cannot overwrite each other; unresolved conflicts remain unmatched.
+- Diagnosis restores the original KPI, monthly trend, store portfolio, channel/member, daypart heatmap, and opportunity views. Store comparisons use the configured size cohorts. Opportunity values are explicit scenarios, not promised returns.
+- This skill remains bound to Enterprise Hub. If the service cannot provide a required field or dimension, defer the affected capability and explain the missing business information. Do not substitute local workbooks, infer unavailable values, or expand service scope to force parity. Profit reporting remains excluded.
+
 ## Current Contract Files
 
 - `config/maijia.json` defines configuration format `1`, canonical datasets, Maijia store buckets, semantic field mappings, report modules, and query limits.

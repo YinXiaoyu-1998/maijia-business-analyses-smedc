@@ -58,8 +58,10 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         self.assertEqual(by_store["龙玥城店"]["store_segment"], "高基盘承压")
 
         trend = read_csv(output_dir / "weekly_trend_comparison_metrics.csv")
-        self.assertEqual(trend[0]["week_label"], "2026-W29")
-        self.assertEqual(trend[0]["series_key"], "current_year")
+        observed = [row for row in trend if row["net_revenue"]]
+        self.assertEqual({row["window_index"] for row in observed}, {"15", "16"})
+        self.assertEqual(observed[0]["week_label"], "07/14-07/20")
+        self.assertEqual(observed[0]["series_key"], "prior_year")
 
         channel = read_csv(output_dir / "weekly_store_channel_metrics.csv")
         self.assertEqual(channel[0]["channel"], "店内销售 / 收银")
@@ -82,7 +84,7 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         )
 
         product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
-        beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
+        beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "招牌牛肉面")
         self.assertEqual(beef["档口"], "面档")
         self.assertEqual(beef["units_per_10k"], "120.0")
         self.assertEqual(beef["units_per_10k_gross_sales"], "96.0")
@@ -146,7 +148,7 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         output_dir, _ = self.run_profile(bundle)
 
         product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
-        beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
+        beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "招牌牛肉面")
         self.assertEqual(beef["档口"], "面档")
 
     def test_weekly_all_store_channel_rates_are_blank_when_denominator_is_partial(self) -> None:
