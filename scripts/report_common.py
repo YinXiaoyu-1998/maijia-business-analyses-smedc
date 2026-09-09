@@ -733,8 +733,8 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def catalog_lookup(rows: list[dict[str, Any]]) -> dict[str, str]:
-    lookup: dict[str, str] = {}
+def catalog_lookup(rows: list[dict[str, Any]]) -> dict[str, set[str]]:
+    lookup: dict[str, set[str]] = defaultdict(set)
     snapshot_dates = sorted(str(row.get("snapshot_date")) for row in rows if row.get("snapshot_date"))
     latest_snapshot = snapshot_dates[-1] if snapshot_dates else None
     selected_rows = [row for row in rows if not latest_snapshot or str(row.get("snapshot_date")) == latest_snapshot]
@@ -743,16 +743,23 @@ def catalog_lookup(rows: list[dict[str, Any]]) -> dict[str, str]:
         for key in (row.get("dish_name"), row.get("dish_alias")):
             normalized = normalize_text(key)
             if normalized:
-                lookup[normalized] = stall
+                lookup[normalized].add(stall)
     return lookup
 
 
-def matched_stall(row: dict[str, Any], catalog: dict[str, str]) -> str:
-    for key in (row.get("matched_product_name"), row.get("product_name")):
+def matched_stall(row: dict[str, Any], catalog: dict[str, set[str]]) -> str:
+    for key in (row.get("product_name"), row.get("matched_product_name")):
         normalized = normalize_text(key)
-        if normalized in catalog:
-            return catalog[normalized]
+        stalls = catalog.get(normalized)
+        if stalls and len(stalls) == 1:
+            stall = next(iter(stalls))
+            if stall != UNMATCHED_STALL:
+                return stall
     return UNMATCHED_STALL
+
+
+def catalog_stall_count(catalog: dict[str, set[str]]) -> int:
+    return len({stall for stalls in catalog.values() for stall in stalls if stall != UNMATCHED_STALL})
 
 
 def period_revenue_maps(current_store_rows: list[dict[str, Any]]) -> tuple[dict[str, Decimal], dict[str, Decimal], dict[str, Decimal]]:
@@ -794,11 +801,13 @@ def stall_and_product_outputs(
 
     dine_in_revenue, order_revenue, gross_sales = period_revenue_maps(current_store_rows)
     stall_groups: dict[tuple[str, str], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
-    product_groups: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    product_groups: dict[tuple[str, str, str], dict[str, Any]] = {}
     matched = 0
     for row in dish_rows:
         store = store_name(row.get("store_name"))
-        product = str(row.get("product_name") or row.get("matched_product_name") or "未知产品").strip()
+        product = str(row.get("matched_product_name") or row.get("product_name") or "未知产品").strip()
+        primary_product = str(row.get("product_name") or "").strip()
+        linked_product = str(row.get("matched_product_name") or "").strip()
         is_dine_in = str(row.get("order_category") or "").strip() == "店内销售"
         sales_class = "堂食" if is_dine_in else "外卖"
         stall = matched_stall(row, catalog)
@@ -811,7 +820,7 @@ def stall_and_product_outputs(
             stall_groups[(store, stall)]["quantity"] += quantity
             stall_groups[(ALL_STORES_LABEL, stall)]["stall_income"] += income
             stall_groups[(ALL_STORES_LABEL, stall)]["quantity"] += quantity
-        key = (store, product, sales_class, stall)
+        key = (store, product, sales_class)
         product_groups.setdefault(
             key,
             {
@@ -820,13 +829,16 @@ def stall_and_product_outputs(
                 "门店名称": store,
                 "产品名称": product,
                 "销售分类": sales_class,
-                "档口": stall,
                 "quantity": Decimal("0"),
-                "search_names": " / ".join(filter(None, [str(row.get("matched_product_name") or ""), product])),
+                "search_names": set(),
+                "matched_stalls": set(),
             },
         )
         product_groups[key]["quantity"] += quantity
-        all_key = (ALL_STORES_LABEL, product, sales_class, stall)
+        product_groups[key]["search_names"].update(name for name in (product, primary_product, linked_product) if name)
+        if stall != UNMATCHED_STALL:
+            product_groups[key]["matched_stalls"].add(stall)
+        all_key = (ALL_STORES_LABEL, product, sales_class)
         product_groups.setdefault(
             all_key,
             {
@@ -835,12 +847,15 @@ def stall_and_product_outputs(
                 "门店名称": ALL_STORES_LABEL,
                 "产品名称": product,
                 "销售分类": sales_class,
-                "档口": stall,
                 "quantity": Decimal("0"),
-                "search_names": " / ".join(filter(None, [str(row.get("matched_product_name") or ""), product])),
+                "search_names": set(),
+                "matched_stalls": set(),
             },
         )
         product_groups[all_key]["quantity"] += quantity
+        product_groups[all_key]["search_names"].update(name for name in (product, primary_product, linked_product) if name)
+        if stall != UNMATCHED_STALL:
+            product_groups[all_key]["matched_stalls"].add(stall)
 
     stall_rows = []
     for (store, stall), values in stall_groups.items():
@@ -860,18 +875,21 @@ def stall_and_product_outputs(
     stall_rows.sort(key=lambda item: (item["门店名称"] != ALL_STORES_LABEL, item["档口"] == UNMATCHED_STALL, -(item["stall_income"] or 0), item["门店名称"], item["档口"]))
 
     product_rows = []
-    for (store, product, sales_class, stall), row in product_groups.items():
+    for (store, _product, _sales_class), row in product_groups.items():
         quantity = row["quantity"]
+        stalls = set(row["matched_stalls"])
         revenue_denominator = order_revenue.get(store, Decimal("0"))
         gross_denominator = gross_sales.get(store, Decimal("0"))
         product_rows.append(
             {
-                **{key: value for key, value in row.items() if key != "quantity"},
+                **{key: value for key, value in row.items() if key not in {"quantity", "search_names", "matched_stalls"}},
+                "档口": next(iter(stalls)) if len(stalls) == 1 else UNMATCHED_STALL,
                 "quantity": rounded(quantity, 2),
                 "order_revenue": rounded(revenue_denominator, 2),
                 "units_per_10k": rounded(div(quantity * Decimal("10000"), revenue_denominator), 4),
                 "gross_sales": rounded(gross_denominator, 2),
                 "units_per_10k_gross_sales": rounded(div(quantity * Decimal("10000"), gross_denominator), 4),
+                "search_names": " / ".join(sorted(row["search_names"])),
             }
         )
     product_rows.sort(key=lambda item: (item["门店名称"] != ALL_STORES_LABEL, item["档口"] == UNMATCHED_STALL, item["门店名称"], item["产品名称"], item["销售分类"]))
@@ -1028,7 +1046,7 @@ def stall_and_product_outputs(
             {"metric": "unmatched_rows", "value": len(dish_rows) - matched},
             {"metric": "match_rate", "value": round(matched / len(dish_rows), 4) if dish_rows else 0},
             {"metric": "catalog_rows", "value": len(catalog_rows)},
-            {"metric": "catalog_stall_count", "value": len(set(catalog.values()))},
+            {"metric": "catalog_stall_count", "value": catalog_stall_count(catalog)},
         ],
         ["metric", "value"],
     )

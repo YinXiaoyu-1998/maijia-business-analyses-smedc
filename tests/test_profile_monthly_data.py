@@ -70,7 +70,7 @@ class ProfileMonthlyDataTests(unittest.TestCase):
         self.assertEqual(daypart_drivers[0]["top_positive_time_slot"], "12:00")
 
         product_rows = read_csv(output_dir / "monthly_store_product_sales_per_10k.csv")
-        beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "牛肉面")
+        beef = next(row for row in product_rows if row["门店名称"] == "荣京道店" and row["产品名称"] == "招牌牛肉面")
         self.assertEqual(beef["units_per_10k"], "120.0")
         self.assertEqual(beef["units_per_10k_gross_sales"], "96.0")
 

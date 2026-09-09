@@ -1,0 +1,232 @@
+import csv
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "profile_weekly_data.py"
+FIXTURE = ROOT / "tests" / "fixtures" / "weekly_bundle.json"
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+class ProductCatalogParityTests(unittest.TestCase):
+    maxDiff = None
+
+    def run_profile(self, bundle_data: dict) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        bundle_path = output_dir / "bundle.json"
+        bundle_path.write_text(json.dumps(bundle_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT), "--bundle", str(bundle_path), "--output-dir", str(output_dir)],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+        )
+        if completed.returncode != 0:
+            self.fail(
+                f"profile_weekly_data failed with {completed.returncode}\n"
+                f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+            )
+        return output_dir
+
+    def test_product_sales_prefers_linked_name_and_keeps_aliases_and_scope_denominators(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["dishes_current_product_totals"]["rows"] = [
+            {
+                "store_name": "荣京道店",
+                "product_name": "牛肉面小份",
+                "matched_product_name": "招牌牛肉面",
+                "order_category": "店内销售",
+                "dish_quantity": "50",
+                "dish_revenue": "1000",
+            },
+            {
+                "store_name": "荣京道店",
+                "product_name": "牛肉面大份",
+                "matched_product_name": "招牌牛肉面",
+                "order_category": "店内销售",
+                "dish_quantity": "70",
+                "dish_revenue": "1400",
+            },
+            {
+                "store_name": "龙玥城店",
+                "product_name": "牛肉面",
+                "matched_product_name": "招牌牛肉面",
+                "order_category": "店内销售",
+                "dish_quantity": "40",
+                "dish_revenue": "800",
+            },
+        ]
+
+        output_dir = self.run_profile(bundle)
+
+        product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
+        store_rows = [
+            row
+            for row in product_rows
+            if row["门店名称"] == "荣京道店" and row["产品名称"] == "招牌牛肉面" and row["销售分类"] == "堂食"
+        ]
+        self.assertEqual(len(store_rows), 1)
+        self.assertEqual(store_rows[0]["quantity"], "120.0")
+        self.assertEqual(store_rows[0]["order_revenue"], "10000.0")
+        self.assertEqual(store_rows[0]["gross_sales"], "12500.0")
+        self.assertEqual(store_rows[0]["units_per_10k"], "120.0")
+        self.assertEqual(store_rows[0]["units_per_10k_gross_sales"], "96.0")
+        self.assertIn("牛肉面小份", store_rows[0]["search_names"])
+        self.assertIn("牛肉面大份", store_rows[0]["search_names"])
+
+        all_store = next(
+            row
+            for row in product_rows
+            if row["门店名称"] == "全体门店" and row["产品名称"] == "招牌牛肉面" and row["销售分类"] == "堂食"
+        )
+        self.assertEqual(all_store["quantity"], "160.0")
+        self.assertEqual(all_store["order_revenue"], "15000.0")
+        self.assertEqual(all_store["gross_sales"], "18750.0")
+
+    def test_stall_resolution_prefers_primary_display_name_before_linked_name_rescue(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["dishes_current_product_totals"]["rows"] = [
+            {
+                "store_name": "荣京道店",
+                "product_name": "牛肉面",
+                "matched_product_name": "招牌牛肉面",
+                "order_category": "店内销售",
+                "dish_quantity": "120",
+                "dish_revenue": "2400",
+            }
+        ]
+        bundle["resultsByJobId"]["dish_catalog_current_snapshot"]["rows"] = [
+            {
+                "snapshot_date": "2026-07-26",
+                "dish_name": "牛肉面",
+                "base_category_name": "面档",
+                "dish_alias": "",
+                "sale_price": "20",
+            },
+            {
+                "snapshot_date": "2026-07-26",
+                "dish_name": "招牌牛肉面",
+                "base_category_name": "外卖品项",
+                "dish_alias": "",
+                "sale_price": "20",
+            },
+        ]
+
+        output_dir = self.run_profile(bundle)
+
+        product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
+        canonical = next(
+            row
+            for row in product_rows
+            if row["门店名称"] == "荣京道店" and row["产品名称"] == "招牌牛肉面" and row["销售分类"] == "堂食"
+        )
+        self.assertEqual(canonical["档口"], "面档")
+
+        stall_rows = read_csv(output_dir / "weekly_store_stall_sales_mix.csv")
+        store_stall = next(row for row in stall_rows if row["门店名称"] == "荣京道店")
+        self.assertEqual(store_stall["档口"], "面档")
+
+    def test_catalog_duplicate_names_across_categories_are_ambiguous_not_last_write_wins(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["dishes_current_product_totals"]["rows"] = [
+            {
+                "store_name": "荣京道店",
+                "product_name": "同名套餐",
+                "matched_product_name": "",
+                "order_category": "店内销售",
+                "dish_quantity": "12",
+                "dish_revenue": "240",
+            }
+        ]
+        bundle["resultsByJobId"]["dish_catalog_current_snapshot"]["rows"] = [
+            {
+                "snapshot_date": "2026-07-26",
+                "dish_name": "同名套餐",
+                "base_category_name": "面档",
+                "dish_alias": "",
+                "sale_price": "20",
+            },
+            {
+                "snapshot_date": "2026-07-26",
+                "dish_name": "同名套餐",
+                "base_category_name": "饭档",
+                "dish_alias": "",
+                "sale_price": "20",
+            },
+        ]
+
+        output_dir = self.run_profile(bundle)
+
+        product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
+        product = next(
+            row
+            for row in product_rows
+            if row["门店名称"] == "荣京道店" and row["产品名称"] == "同名套餐" and row["销售分类"] == "堂食"
+        )
+        self.assertEqual(product["档口"], "未匹配")
+
+        stall_rows = read_csv(output_dir / "weekly_store_stall_sales_mix.csv")
+        store_stall = next(row for row in stall_rows if row["门店名称"] == "荣京道店")
+        self.assertEqual(store_stall["档口"], "未匹配")
+
+    def test_product_sales_groups_canonical_product_across_conflicting_stalls(self) -> None:
+        bundle = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        bundle["resultsByJobId"]["dishes_current_product_totals"]["rows"] = [
+            {
+                "store_name": "荣京道店",
+                "product_name": "儿童牛肉面",
+                "matched_product_name": "招牌牛肉面",
+                "order_category": "店内销售",
+                "dish_quantity": "30",
+                "dish_revenue": "600",
+            },
+            {
+                "store_name": "荣京道店",
+                "product_name": "家庭牛肉面",
+                "matched_product_name": "招牌牛肉面",
+                "order_category": "店内销售",
+                "dish_quantity": "90",
+                "dish_revenue": "1800",
+            },
+        ]
+        bundle["resultsByJobId"]["dish_catalog_current_snapshot"]["rows"] = [
+            {
+                "snapshot_date": "2026-07-26",
+                "dish_name": "儿童牛肉面",
+                "base_category_name": "儿童餐",
+                "dish_alias": "",
+                "sale_price": "20",
+            },
+            {
+                "snapshot_date": "2026-07-26",
+                "dish_name": "家庭牛肉面",
+                "base_category_name": "面档",
+                "dish_alias": "",
+                "sale_price": "20",
+            },
+        ]
+
+        output_dir = self.run_profile(bundle)
+
+        product_rows = read_csv(output_dir / "weekly_store_product_sales_per_10k.csv")
+        store_rows = [
+            row
+            for row in product_rows
+            if row["门店名称"] == "荣京道店" and row["产品名称"] == "招牌牛肉面" and row["销售分类"] == "堂食"
+        ]
+        self.assertEqual(len(store_rows), 1)
+        self.assertEqual(store_rows[0]["quantity"], "120.0")
+        self.assertEqual(store_rows[0]["档口"], "未匹配")
+        self.assertIn("儿童牛肉面", store_rows[0]["search_names"])
+        self.assertIn("家庭牛肉面", store_rows[0]["search_names"])
