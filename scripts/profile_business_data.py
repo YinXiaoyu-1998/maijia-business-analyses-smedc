@@ -10,6 +10,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from profile_monthly_data import normalize_business_month
+
 from report_common import (
     aggregate_rows,
     job_metadata,
@@ -102,7 +104,7 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
     overall_source = rows_for(bundle, "business_current_kpi_totals")
     overall = diagnosis_metric_row(overall_source[0] if overall_source else aggregate_rows(rows_for(bundle, "business_current_store_totals")))
     store_rows = [
-        {"门店名称": row["门店名称"], "城市": "未知城市", "商户号": "未知商户号", **diagnosis_metric_row(source)}
+        {"门店名称": row["门店名称"], "城市": source.get("city") or "", "商户号": source.get("merchant_id") or "", **diagnosis_metric_row(source)}
         for source in rows_for(bundle, "business_current_store_totals")
         for row in [{"门店名称": store_name(source.get("store_name"))}]
     ]
@@ -145,7 +147,21 @@ def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:
     ]
     store_daypart_rows.sort(key=lambda item: (item["门店名称"], -(item.get("net_revenue") or 0), item["餐段"], item["时段"]))
 
-    monthly_rows = [{"月": bundle["report"]["windows"]["current"]["start"][:7], **overall}]
+    monthly_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows_for(bundle, "business_current_monthly_trend"):
+        month, start, _ = normalize_business_month(row.get("business_month"))
+        if start:
+            monthly_groups[month].append(row)
+    monthly_rows = []
+    window = bundle["report"]["windows"]["current"]
+    month = window["start"][:7]
+    while monthly_groups and month <= window["end"][:7]:
+        sources = monthly_groups.get(month, [])
+        monthly_rows.append({"月": month, **diagnosis_metric_row(aggregate_rows(sources))})
+        year, number = map(int, month.split("-"))
+        month = f"{year + (number == 12):04d}-{number % 12 + 1:02d}"
+    if overall.get("store_count") is None and store_rows:
+        overall["store_count"] = len({row["门店名称"] for row in store_rows})
     write_csv(output_dir / "monthly_trend.csv", monthly_rows, ["月"] + COMMON_FIELDS)
     write_csv(output_dir / "store_summary.csv", store_rows, ["门店名称", "城市", "商户号"] + COMMON_FIELDS)
     write_csv(output_dir / "channel_summary.csv", channel_rows, ["订单分类", "订单来源"] + COMMON_FIELDS)
