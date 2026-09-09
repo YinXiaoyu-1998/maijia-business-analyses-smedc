@@ -7,10 +7,15 @@ import json
 import re
 import sys
 from calendar import monthrange
+from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from typing import Any
 
+from build_query_plan import monthly_trend_window, subtract_months
+
 from report_common import (
+    aggregate_rows,
     COMPARISON_METRICS,
     METRIC_FIELDS,
     channel_rows,
@@ -61,35 +66,37 @@ def comparison_fieldnames() -> list[str]:
 
 
 def trend_rows(bundle: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = []
-    for job_id, series_key in (
+    """Anchor both series to the same six calendar positions, never observed-row ranks."""
+    current = monthly_trend_window(date.fromisoformat(bundle["report"]["windows"]["current"]["end"]))
+    starts = {"current_year": current.start, "prior_year": current.start.replace(year=current.start.year - 1)}
+    groups: dict[tuple[str, str, int], list[dict[str, Any]]] = defaultdict(list)
+    for job_id, series in (
         ("business_6_month_prior_year_store_trend", "prior_year"),
         ("business_6_month_store_trend", "current_year"),
     ):
         for source in rows_for(bundle, job_id):
-            month_label, month_start, month_end = normalize_business_month(source.get("business_month"))
-            rows.extend(
-                store_metric_rows(
-                    [source],
-                    {
-                        "series_key": series_key,
-                        "series_label": month_label[:4],
-                        "window_index": None,
-                        "month_start": month_start,
-                        "month_end": month_end,
-                        "month_label": month_label,
-                    },
-                )
-            )
-    for series_key in ("prior_year", "current_year"):
-        labels = sorted({row["month_label"] for row in rows if row["series_key"] == series_key})
-        indexes = {label: index for index, label in enumerate(labels, start=1)}
-        for row in rows:
-            if row["series_key"] != series_key:
+            _, month_start, _ = normalize_business_month(source.get("business_month"))
+            if not month_start:
                 continue
-            row["window_index"] = indexes[row["month_label"]]
-    rows.sort(key=lambda item: (item["window_index"], item["series_key"], item["门店名称"]))
-    return rows
+            month = date.fromisoformat(month_start)
+            first = starts[series]
+            index = (month.year - first.year) * 12 + month.month - first.month + 1
+            if 1 <= index <= 6:
+                groups[(series, str(source.get("store_name") or "未知门店"), index)].append(source)
+    stores = sorted({store for _, store, _ in groups})
+    output = []
+    for index in range(1, 7):
+        for series, first in starts.items():
+            start = subtract_months(first, -(index - 1))
+            end = date(start.year, start.month, monthrange(start.year, start.month)[1])
+            for store in stores:
+                sources = groups.get((series, store, index), [])
+                source = sources[0] if len(sources) == 1 else aggregate_rows(sources)
+                output.extend(store_metric_rows([{**source, "store_name": store}], {
+                    "series_key": series, "series_label": str(start.year), "window_index": index,
+                    "month_start": start.isoformat(), "month_end": end.isoformat(), "month_label": f"{start:%Y-%m}",
+                }))
+    return output
 
 
 def profile(bundle_path: Path, output_dir: Path) -> dict[str, Any]:

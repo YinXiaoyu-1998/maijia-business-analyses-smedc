@@ -20,7 +20,7 @@ def read_facts(path: Path) -> list[dict[str, Any]]:
         for key, value in row.items():
             if value in (None, ""):
                 row[key] = None
-            else:
+            elif key not in {"门店名称", "餐段", "时段", "城市", "商户号", "订单分类", "订单来源", "月", "会员类型", "支付/来源"}:
                 try:
                     row[key] = float(value)
                 except ValueError:
@@ -858,6 +858,7 @@ HTML_TEMPLATE = r'''<!doctype html>
       const host = clear('storeScatter');
       const w = host.clientWidth || 620, h = 320, pad = {t: 22, r: 30, b: 44, l: 58};
       const rows = selectedStores().filter(r => known(r.net_revenue) && known(r.post_discount_aov) && known(r.discount_rate));
+      host.closest('.panel').hidden = !rows.length;
       if (!rows.length) return;
       const xs = rows.map(r => metricValue(r, 'post_discount_aov'));
       const ys = rows.map(r => metricValue(r, 'net_revenue'));
@@ -903,7 +904,14 @@ HTML_TEMPLATE = r'''<!doctype html>
       const option = document.createElement('option'); option.value = size; option.textContent = size; storeSizeSelect.appendChild(option);
     });
     function selectedStores() { return data.stores.filter(r => r.store_size === storeSizeSelect.value); }
-    storeSizeSelect.addEventListener('change', () => { renderStoreBar(); renderScatter(); renderSegments(); renderStoreTable(); });
+    function updateStoreControls() {
+      document.querySelectorAll('[data-store-metric]').forEach(btn => {
+        btn.disabled = !selectedStores().some(r => known(r[btn.dataset.storeMetric]));
+        btn.classList.toggle('active', btn.dataset.storeMetric === 'net_revenue');
+      });
+    }
+    updateStoreControls();
+    storeSizeSelect.addEventListener('change', () => { updateStoreControls(); renderStoreBar(); renderScatter(); renderSegments(); renderStoreTable(); });
     let storeSort = {key: 'net_revenue', dir: -1};
     function renderStoreTable() {
       const tbody = document.querySelector('#storeTable tbody');

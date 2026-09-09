@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiagnosisParityTests(unittest.TestCase):
+    def test_numeric_hour_labels_remain_text_for_heatmap_interactions(self):
+        bundle = self.bundle()
+        bundle["resultsByJobId"]["business_current_efficiency"]["rows"][0]["time_slot"] = "12"
+        _, _, payload = self.render(bundle)
+        self.assertIn("12", {row["时段"] for row in payload["dayparts"]})
+
     def bundle(self):
         bundle = json.loads((ROOT / "tests/fixtures/diagnosis_bundle.json").read_text())
         bundle["report"]["windows"]["current"] = {"start": "2026-02-01", "end": "2026-04-30"}

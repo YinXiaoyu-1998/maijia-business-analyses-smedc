@@ -58,8 +58,10 @@ class ProfileWeeklyDataTests(unittest.TestCase):
         self.assertEqual(by_store["龙玥城店"]["store_segment"], "高基盘承压")
 
         trend = read_csv(output_dir / "weekly_trend_comparison_metrics.csv")
-        self.assertEqual(trend[0]["week_label"], "2026-W29")
-        self.assertEqual(trend[0]["series_key"], "current_year")
+        observed = [row for row in trend if row["net_revenue"]]
+        self.assertEqual({row["window_index"] for row in observed}, {"15", "16"})
+        self.assertEqual(observed[0]["week_label"], "07/14-07/20")
+        self.assertEqual(observed[0]["series_key"], "prior_year")
 
         channel = read_csv(output_dir / "weekly_store_channel_metrics.csv")
         self.assertEqual(channel[0]["channel"], "店内销售 / 收银")

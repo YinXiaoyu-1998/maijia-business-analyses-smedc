@@ -55,7 +55,7 @@ class ProfileMonthlyDataTests(unittest.TestCase):
         self.assertEqual(by_store["龙玥城店"]["store_size_bucket"], "小店")
 
         trend = read_csv(output_dir / "monthly_trend_comparison_metrics.csv")
-        series_and_months = {(row["series_key"], row["month_label"]) for row in trend}
+        series_and_months = {(row["series_key"], row["month_label"]) for row in trend if row["net_revenue"]}
         self.assertEqual(
             series_and_months,
             {
@@ -111,7 +111,7 @@ class ProfileMonthlyDataTests(unittest.TestCase):
 
         trend = read_csv(output_dir / "monthly_trend_comparison_metrics.csv")
         self.assertEqual(
-            {(row["series_key"], row["month_label"], row["month_start"], row["month_end"]) for row in trend},
+            {(row["series_key"], row["month_label"], row["month_start"], row["month_end"]) for row in trend if row["net_revenue"]},
             {
                 ("prior_year", "2025-06", "2025-06-01", "2025-06-30"),
                 ("prior_year", "2025-07", "2025-07-01", "2025-07-31"),
