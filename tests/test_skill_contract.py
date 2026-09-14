@@ -18,11 +18,21 @@ class SkillContractTests(unittest.TestCase):
         self.assertRegex(self.skill_text, r"(?s)^---\n.*name: maijia-business-analyses-smedc\n")
         self.assertRegex(self.skill_text, r"(?m)^description: Use when .+Maijia.+Enterprise Hub")
         self.assertIn("**REQUIRED SUB-SKILL:** Use enterprise-hub-mcp", self.skill_text)
-        self.assertIn("enterprise-hub-mcp-launcher@0.2.7", self.skill_text)
-        self.assertIn("enterprise-hub-mcp-launcher@0.2.7", self.readme_text)
-        self.assertIn("enterprise-hub-mcp-launcher@0.2.7", self.readme_zh_text)
         self.assertIn("$maijia-business-analyses-smedc", self.openai_yaml_text)
         self.assertIn("diagnosis", self.openai_yaml_text)
+
+    def test_launcher_version_is_owned_by_the_prerequisite_skill(self) -> None:
+        public_docs = [self.skill_text, self.readme_text, self.readme_zh_text]
+        pinned_launcher = r"enterprise-hub-mcp-launcher@\d+\.\d+\.\d+"
+
+        for text in public_docs:
+            with self.subTest(language=text.splitlines()[0]):
+                self.assertIsNone(re.search(pinned_launcher, text))
+
+        self.assertIn("latest launcher version currently approved by `enterprise-hub-mcp`", self.skill_text)
+        self.assertIn("Do not hard-code", self.skill_text)
+        self.assertIn("latest launcher version currently approved", self.readme_text)
+        self.assertIn("前置 skill 当前批准的 launcher 最新版", self.readme_zh_text)
 
     def test_readmes_document_public_cross_runtime_skill_install(self) -> None:
         for text in [self.readme_text, self.readme_zh_text]:
@@ -30,7 +40,6 @@ class SkillContractTests(unittest.TestCase):
                 self.assertIn("~/.agents/skills/maijia-business-analyses-smedc", text)
                 self.assertIn("YinXiaoyu-1998/maijia-business-analyses-smedc", text)
                 self.assertIn("enterprise-hub-mcp-skill", text)
-                self.assertIn("enterprise-hub-mcp-launcher@0.2.7", text)
                 self.assertNotIn("/Users/xiaoyuyin/.agents/skills", text)
                 self.assertIsNone(re.search(r"npm install .*enterprise-hub-mcp-launcher", text))
 

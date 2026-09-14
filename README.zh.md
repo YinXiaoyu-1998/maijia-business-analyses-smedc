@@ -4,11 +4,11 @@
 
 本仓库将原 [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill 的报告展示和交互适配到 Enterprise Hub 查询结果，由版权持有人按本仓库的 MIT 许可发布，见 [LICENSE](LICENSE)。
 
-本 skill 使用 `enterprise-hub-mcp-launcher@0.2.7`，并通过用户已认证的 Enterprise Hub MCP tools 获取结构化 dataset registry、coverage 和 query 结果。
+本 skill 将 launcher 版本选择交给 `enterprise-hub-mcp-skill`，使用前置 skill 当前批准的 launcher 最新版，并通过用户已认证的 Enterprise Hub MCP tools 获取结构化 dataset registry、coverage 和 query 结果。
 
 ## 安装
 
-前置条件：先安装并使用 [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) 配置、更新并登录官方 current-user Enterprise Hub MCP launcher。本 reporting skill 要求 `enterprise-hub-mcp-launcher@0.2.7`，但 launcher 安装和认证流程由前置 skill 负责。
+前置条件：先安装或更新并使用 [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) 配置、更新并登录官方 current-user Enterprise Hub MCP launcher。始终使用前置 skill 当前批准的 launcher 最新版；本 reporting skill 不保存任何 launcher 版本 pin，安装和认证流程也由前置 skill 负责。
 
 将本 reporting skill 安装到跨运行时 user skills 目录：
 
