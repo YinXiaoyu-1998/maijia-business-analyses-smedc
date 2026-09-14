@@ -7,11 +7,11 @@ description: Use when generating Maijia diagnosis, weekly, or monthly operating 
 
 Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meeting reports from Enterprise Hub structured data. The employee-owned agent does the MCP calls; local scripts only validate saved MCP envelopes, derive facts, and render self-contained HTML.
 
-**REQUIRED SUB-SKILL:** Use enterprise-hub-mcp for official current-user Enterprise Hub install, update, repair, and login. This reporting skill depends on `enterprise-hub-mcp-launcher@0.2.7`, but does not duplicate launcher installation mechanics or authentication steps.
+**REQUIRED SUB-SKILL:** Use enterprise-hub-mcp for official current-user Enterprise Hub install, update, repair, and login. Before fetching report data, use the latest launcher version currently approved by `enterprise-hub-mcp`; this reporting skill does not own the launcher version, installation mechanics, or authentication steps.
 
 ## Boundaries
 
-- Use only `enterprise-hub-mcp-launcher@0.2.7` and an authenticated `enterprise-hub-mcp` session for remote data.
+- Use an authenticated `enterprise-hub-mcp` session running the latest launcher version currently approved by that skill. Do not hard-code, reuse, or infer a launcher version from this reporting skill.
 - Use exactly these Enterprise Hub MCP tools: `list_structured_datasets`, `describe_structured_dataset_coverage`, `query_structured_dataset`.
 - Do not use direct HTTP, service databases, service configuration, or internal storage.
 - Do not handle passwords or tokens. Ask the user to complete login in the official launcher or browser auth flow.
@@ -21,7 +21,7 @@ Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meetin
 
 ## Workflow
 
-1. Use `enterprise-hub-mcp` to install, update, repair, or log in to the official current-user Enterprise Hub MCP launcher. Continue only after the authenticated MCP session exposes the business tools. Record in the handoff that this run used the required `enterprise-hub-mcp-launcher@0.2.7` dependency.
+1. Use `enterprise-hub-mcp`, freshly read or updated, to install, update, repair, or log in to the official current-user Enterprise Hub MCP launcher at the latest version it currently approves. Continue only after the authenticated MCP session exposes the business tools. Record in the handoff the actual launcher version that `enterprise-hub-mcp` installed or verified for this run.
 
 2. Create a run directory, for example `runs/2026-09-05-weekly/`, with durable evidence paths:
 
