@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import re
+import shutil
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 from pathlib import Path
@@ -124,6 +125,30 @@ GROUP_KEY_CANDIDATES = (
 
 class ProfileError(ValueError):
     pass
+
+
+def cleanup_partition_extracts(bundle_path: Path) -> None:
+    """Remove only launcher-owned scratch directories named by an assembled bundle."""
+    try:
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return
+    directories = bundle.get("partitionExtractDirectories") if isinstance(bundle, dict) else None
+    if not isinstance(directories, list):
+        return
+    for raw in directories:
+        if not isinstance(raw, str) or not raw:
+            continue
+        path = Path(raw)
+        try:
+            if path.is_symlink() or not path.is_dir():
+                continue
+            resolved = path.resolve()
+            if resolved.parent.name != "enterprise-hub-partition-extracts" or not resolved.name.startswith("extract-"):
+                continue
+            shutil.rmtree(resolved)
+        except OSError:
+            continue
 
 
 def load_bundle(path: Path, expected_type: str) -> dict[str, Any]:

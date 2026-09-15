@@ -1,24 +1,17 @@
 {
   "dataset": "dishes",
-  "metadataPolicy": "window",
-  "sources": [
+  "accessMode": "partition_extract",
+  "enterprises": [
     {
-      "importBatchId": "imp_synth_dishes_202607",
-      "sourceDocumentId": "doc_synth_dishes_202607",
-      "sourceDocumentTitle": "Synthetic Maijia Dishes Window 2026-07",
-      "startDate": "2026-07-01",
-      "endDate": "2026-07-31",
-      "appliedAt": "2026-08-01T08:40:00.000Z",
-      "rowCount": 2840
-    },
-    {
-      "importBatchId": "imp_synth_dishes_202507",
-      "sourceDocumentId": "doc_synth_dishes_202507",
-      "sourceDocumentTitle": "Synthetic Maijia Dishes Window 2025-07",
+      "enterpriseName": "麦家小馆",
       "startDate": "2025-07-01",
-      "endDate": "2025-07-31",
-      "appliedAt": "2026-08-01T08:45:00.000Z",
-      "rowCount": 2715
+      "endDate": "2026-07-31",
+      "partitionCount": 792,
+      "totalRowCount": 58940,
+      "stores": [
+        { "storeId": "001", "storeName": "荣京道店" },
+        { "storeId": "002", "storeName": "经海路店" }
+      ]
     }
   ]
 }

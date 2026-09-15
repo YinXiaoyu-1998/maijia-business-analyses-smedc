@@ -125,7 +125,7 @@ def validate_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:
         if job_id in seen:
             raise BundleError(f"duplicate manifest job id: {job_id}")
         seen.add(job_id)
-        if job.get("tool") != "query_structured_dataset":
+        if job.get("tool") not in {"query_structured_dataset", "local_partition_aggregate"}:
             raise BundleError(f"job {job_id} uses unsupported tool {job.get('tool')}")
         if not isinstance(job.get("module"), str) or not job["module"]:
             raise BundleError(f"job {job_id} has invalid module")
@@ -422,6 +422,22 @@ def assemble_bundle(manifest: dict[str, Any], responses_dir: Path, config: dict[
         }
         for job in jobs
     ]
+    extract_directories: list[str] = []
+    extracts = manifest.get("extracts", [])
+    if not isinstance(extracts, list):
+        raise BundleError("manifest extracts must be an array")
+    for index, extract in enumerate(extracts):
+        if not isinstance(extract, dict) or extract.get("tool") != "download_structured_partitions":
+            raise BundleError(f"manifest extract {index} is malformed")
+        output_file = extract.get("outputFile")
+        if not isinstance(output_file, str):
+            raise BundleError(f"manifest extract {index} has invalid outputFile")
+        response_path = manifest_output_path(responses_dir, output_file)
+        if not response_path.exists():
+            continue
+        response = unwrap_success_envelope(load_json(response_path, "partition download response"))
+        if isinstance(response, dict) and isinstance(response.get("localDirectory"), str):
+            extract_directories.append(response["localDirectory"])
     return {
         "schemaVersion": 1,
         "report": manifest["report"],
@@ -429,6 +445,7 @@ def assemble_bundle(manifest: dict[str, Any], responses_dir: Path, config: dict[
         "notices": sort_notices(notices),
         "outputContract": manifest.get("outputContract"),
         "jobs": jobs_metadata,
+        "partitionExtractDirectories": sorted(set(extract_directories)),
         "resultsByJobId": {job_id: results_by_job_id[job_id] for job_id in sorted(results_by_job_id)},
     }
 

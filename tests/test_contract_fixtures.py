@@ -82,19 +82,20 @@ class ContractFixtureTests(unittest.TestCase):
         self.assertEqual(tuple(dataset["dataset"] for dataset in registry["datasets"]), SCOPED_DATASETS)
         self.assertEqual(
             {dataset["dataset"]: len(dataset["fields"]) for dataset in registry["datasets"]},
-            {"business": 153, "dishes": 52, "dish_catalog": 12},
+            {"business": 152, "dishes": 51, "dish_catalog": 12},
         )
 
     def test_coverage_fixtures_use_dataset_specific_source_shape(self) -> None:
         for file_name in ["coverage_business.json", "coverage_dishes.json"]:
             with self.subTest(fixture=file_name):
                 coverage = json.loads((FIXTURES / file_name).read_text(encoding="utf-8"))
-                self.assertEqual(coverage["metadataPolicy"], "window")
-                for source in coverage["sources"]:
-                    self.assertIn("startDate", source)
-                    self.assertIn("endDate", source)
-                    self.assertNotIn("snapshotDate", source)
-                    self.assertTrue(source["sourceDocumentTitle"].startswith("Synthetic "))
+                self.assertEqual(coverage["accessMode"], "partition_extract")
+                for enterprise in coverage["enterprises"]:
+                    self.assertIn("enterpriseName", enterprise)
+                    self.assertIn("startDate", enterprise)
+                    self.assertIn("endDate", enterprise)
+                    self.assertIn("partitionCount", enterprise)
+                    self.assertIn("stores", enterprise)
 
         catalog_coverage = self.load_json("tests/fixtures/coverage_dish_catalog.json")
         self.assertEqual(catalog_coverage["dataset"], "dish_catalog")

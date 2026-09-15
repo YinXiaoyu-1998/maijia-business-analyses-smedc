@@ -4,7 +4,7 @@
 
 本仓库将原 [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill 的报告展示和交互适配到 Enterprise Hub 查询结果，由版权持有人按本仓库的 MIT 许可发布，见 [LICENSE](LICENSE)。
 
-本 skill 将 launcher 版本选择交给 `enterprise-hub-mcp-skill`，使用前置 skill 当前批准的 launcher 最新版，并通过用户已认证的 Enterprise Hub MCP tools 获取结构化 dataset registry、coverage 和 query 结果。
+本 skill 将 launcher 版本选择交给 `enterprise-hub-mcp-skill`，使用前置 skill 当前批准的 launcher 最新版。`business` 和 `dishes` 通过已认证 launcher 下载授权分区并在本地分析；`dish_catalog` 继续使用受控行查询。
 
 ## 安装
 
@@ -24,13 +24,13 @@ git clone https://github.com/YinXiaoyu-1998/maijia-business-analyses-smedc.git ~
 - 基于 Enterprise Hub 结构化数据生成经营诊断、周会报表和月会报表；
 - 使用 `business`、`dishes`、`dish_catalog` 三个 canonical dataset；
 - 在可选数据缺失或 coverage 不完整时生成诚实的 partial report；
-- 本地校验已保存的 MCP response envelope，并生成确定性的 HTML report artifact。
+- 以有界内存流式聚合 launcher 管理的 canonical CSV 分区，并生成确定性的 HTML report artifact。
 
 明确不包含：
 
 - 美团浏览器导出或下载流程；
 - 直接 HTTP、token、密码、数据库或服务配置读取；
-- 以本地 CSV/XLSX 作为报表源数据的兼容路径；
+- 以用户提供的本地 CSV/XLSX 作为报表源数据的兼容路径；
 - 月利润或利润率流程；
 - 真实客户数据、凭据或未发布 launcher 版本 pin。
 
@@ -39,13 +39,14 @@ git clone https://github.com/YinXiaoyu-1998/maijia-business-analyses-smedc.git ~
 1. 使用前置 `enterprise-hub-mcp-skill` 完成 current-user launcher 安装、更新和登录；确认已认证的 Enterprise Hub MCP session 可用后再继续。
 2. 将 `list_structured_datasets` envelope 保存为 `registry_response.json`。
 3. 对 `business`、`dishes`、`dish_catalog` 依次调用 `describe_structured_dataset_coverage`，保存为 `coverage_business.json`、`coverage_dishes.json`、`coverage_dish_catalog.json`。
-4. 使用 `python3 scripts/build_query_plan.py` 生成 `diagnosis`、`weekly` 或 `monthly` 的 query manifest。
-5. 对 manifest 中每个 job 调用 `query_structured_dataset`。如果返回 `nextCursor` 非空，继续分页调用直到 `nextCursor` 为 `null`；多页结果按请求顺序保存为数组，路径使用 `jobs[].outputFile`，通常位于 `query-results/`。
-6. 运行 `python3 scripts/assemble_query_bundle.py`，再运行对应 renderer runner：
+4. 使用 coverage 中的准确企业名运行 `python3 scripts/build_query_plan.py`，生成 `diagnosis`、`weekly` 或 `monthly` manifest。
+5. 对每个 `extracts[]` 项调用 `download_structured_partitions`；planner 只合并重叠或相邻日期窗口。
+6. 只执行 `tool` 为 `query_structured_dataset` 的 job（当前只有 `dish_catalog`），并按 `nextCursor` 分页至 `null`。
+7. 依次运行 `python3 scripts/load_partition_extract.py`、`python3 scripts/assemble_query_bundle.py` 和对应 renderer runner：
    - diagnosis：`python3 scripts/run_business_report.py`
    - weekly：`python3 scripts/run_weekly_report.py`
    - monthly：`python3 scripts/run_monthly_report.py`
-7. 保留 registry、coverage、manifest、raw query responses、bundle、facts 和 HTML report 作为 provenance；只清理不影响审计的 scratch 文件。
+8. 保留 registry、coverage、manifest、聚合 query results、bundle、facts 和 HTML report。runner 在 `finally` 中清理 launcher extract；assembly 前失败时使用 loader 的 cleanup-only 模式。
 
 coverage 缺口或可选 job 失败应生成带 notice 的 partial report，不应补造事实或归因为服务故障。
 
@@ -61,7 +62,7 @@ coverage 缺口或可选 job 失败应生成带 notice 的 partial report，不�
 
 - `config/maijia.json` 定义 schema version `1`、canonical datasets、麦家门店分组、语义字段映射、报表模块和查询限制。
 - `tests/fixtures/registry_response.json` 是报表合同所需的完整 `list_structured_datasets` 响应 envelope，覆盖当前 `business`、`dishes`、`dish_catalog` 的全部 canonical fields。
-- `tests/fixtures/coverage_business.json`、`tests/fixtures/coverage_dishes.json`、`tests/fixtures/coverage_dish_catalog.json` 是合成的 `describe_structured_dataset_coverage` 响应 envelope。
+- `tests/fixtures/coverage_business.json`、`tests/fixtures/coverage_dishes.json`、`tests/fixtures/coverage_dish_catalog.json` 是合成的 partition 与 row-query coverage envelope。
 
 所有 fixture 中的公司、文档、导入批次和门店名称均为合成数据，只供后续 query-plan 与 bundle-validation 测试使用，不代表生产数据。
 
@@ -71,9 +72,10 @@ coverage 缺口或可选 job 失败应生成带 notice 的 partial report，不�
 
 - `list_structured_datasets`
 - `describe_structured_dataset_coverage`
+- `download_structured_partitions`
 - `query_structured_dataset`
 
-本仓库脚本只负责校验保存下来的 MCP envelope，并在本地生成事实表和报告产物。脚本不得自行认证、启动 launcher、直连 Enterprise Hub HTTP API，或读取服务内部数据。
+本仓库脚本校验保存下来的 MCP envelope，只流式读取已认证工具返回的 launcher 管理目录，并在本地生成聚合结果、事实表和报告。脚本不得自行认证、启动 launcher、直连 Enterprise Hub HTTP API，或读取服务内部数据。
 
 ## Development
 
@@ -88,6 +90,7 @@ python3 -m pip install -r requirements-dev.txt
 ```bash
 python3 -m unittest discover -s tests -v
 python3 scripts/build_query_plan.py --help
+python3 scripts/load_partition_extract.py --help
 python3 scripts/assemble_query_bundle.py --help
 python3 scripts/run_business_report.py --help
 python3 scripts/run_weekly_report.py --help

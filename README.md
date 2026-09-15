@@ -4,7 +4,7 @@ Enterprise Hub-backed reporting skill for Maijia operating reports.
 
 This repository adapts the report presentation and interactions from the original [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill while replacing local workbook reads with Enterprise Hub queries. It is released by the copyright holder under this repository's MIT license; see [LICENSE](LICENSE).
 
-This skill delegates launcher version selection to `enterprise-hub-mcp-skill` and uses the latest launcher version currently approved by that prerequisite skill, together with the authenticated Enterprise Hub MCP tools for structured dataset registry, coverage, and query access.
+This skill delegates launcher version selection to `enterprise-hub-mcp-skill` and uses the latest launcher version currently approved by that prerequisite skill. `business` and `dishes` are downloaded as authorized launcher-managed partitions and analyzed locally; `dish_catalog` remains a controlled row query.
 
 ## Installation
 
@@ -24,13 +24,13 @@ Included:
 - operating diagnosis, weekly meeting, and monthly meeting reports from Enterprise Hub structured datasets;
 - modules backed by the canonical `business`, `dishes`, and `dish_catalog` datasets;
 - honest partial-report behavior when optional data is absent or coverage is incomplete;
-- local validation of saved MCP response envelopes and deterministic HTML report artifacts.
+- bounded-memory local aggregation of launcher-managed canonical partition CSVs and deterministic HTML report artifacts.
 
 Excluded by design:
 
 - direct Meituan browser export or download instructions;
 - direct HTTP, token, password, database, or service-configuration access;
-- local CSV/XLSX report ingestion as the reporting source;
+- user-provided local CSV/XLSX report ingestion as a compatibility source;
 - monthly profit or profit-rate workflows;
 - real customer data, credentials, or unpublished launcher pins.
 
@@ -39,13 +39,14 @@ Excluded by design:
 1. Use the prerequisite `enterprise-hub-mcp-skill` for current-user launcher install/update/login; continue only after the authenticated Enterprise Hub MCP session is available.
 2. Save the `list_structured_datasets` envelope as `registry_response.json`.
 3. Save `describe_structured_dataset_coverage` envelopes for `business`, `dishes`, and `dish_catalog` as `coverage_business.json`, `coverage_dishes.json`, and `coverage_dish_catalog.json`.
-4. Run `python3 scripts/build_query_plan.py` for `diagnosis`, `weekly`, or `monthly`.
-5. Execute each manifest job with `query_structured_dataset`, following `nextCursor` until it is `null`; save multi-page jobs as arrays at `jobs[].outputFile` under `query-results/`.
-6. Run `python3 scripts/assemble_query_bundle.py`, then the matching renderer runner:
+4. Run `python3 scripts/build_query_plan.py` for `diagnosis`, `weekly`, or `monthly`, including the exact enterprise name from coverage.
+5. Execute every `extracts[]` entry with `download_structured_partitions`. The planner coalesces only overlapping or adjacent date windows.
+6. Execute only `query_structured_dataset` jobs (currently `dish_catalog`), following `nextCursor` until it is `null`.
+7. Run `python3 scripts/load_partition_extract.py`, then `python3 scripts/assemble_query_bundle.py`, then the matching renderer runner:
    - diagnosis: `python3 scripts/run_business_report.py`
    - weekly: `python3 scripts/run_weekly_report.py`
    - monthly: `python3 scripts/run_monthly_report.py`
-7. Keep registry, coverage, manifest, raw query responses, bundle, facts, and report HTML as run provenance; remove only scratch files that are not needed for audit.
+8. Keep registry, coverage, manifest, aggregate query results, bundle, facts, and report HTML as provenance. Report runners always remove launcher extract directories in `finally`; a cleanup-only loader mode covers failures before assembly.
 
 Missing coverage or failed optional jobs should become partial or empty reports, not fabricated facts or service-health claims. Unsupported modules are hidden; the report uses short business-language notices and does not display query jobs, source files, IDs, coverage tables, or internal error codes.
 
@@ -61,7 +62,7 @@ Missing coverage or failed optional jobs should become partial or empty reports,
 
 - `config/maijia.json` defines configuration format `1`, canonical datasets, Maijia store buckets, semantic field mappings, report modules, and query limits.
 - `tests/fixtures/registry_response.json` is the full scoped `list_structured_datasets` envelope for the reporting contract, covering every current `business`, `dishes`, and `dish_catalog` canonical field.
-- `tests/fixtures/coverage_business.json`, `tests/fixtures/coverage_dishes.json`, and `tests/fixtures/coverage_dish_catalog.json` are synthetic `describe_structured_dataset_coverage` envelopes.
+- `tests/fixtures/coverage_business.json`, `tests/fixtures/coverage_dishes.json`, and `tests/fixtures/coverage_dish_catalog.json` are synthetic partition and row-query coverage envelopes.
 
 The fixtures use only synthetic company, document, import, and store names. They are meant for future query-plan and bundle-validation tests, not as production data.
 
@@ -71,9 +72,10 @@ Agents using this skill should call Enterprise Hub MCP tools through the user's 
 
 - `list_structured_datasets`
 - `describe_structured_dataset_coverage`
+- `download_structured_partitions`
 - `query_structured_dataset`
 
-Scripts in this repository must validate saved MCP envelopes and produce local fact/report artifacts. They must not authenticate, start the launcher, call Enterprise Hub HTTP APIs directly, or read service internals.
+Scripts in this repository validate saved MCP envelopes, stream only the launcher-managed partition directories returned by authenticated tools, and produce local aggregate/fact/report artifacts. They must not authenticate, start the launcher, call Enterprise Hub HTTP APIs directly, or read service internals.
 
 ## Development
 
@@ -88,6 +90,7 @@ Run the repository checks:
 ```bash
 python3 -m unittest discover -s tests -v
 python3 scripts/build_query_plan.py --help
+python3 scripts/load_partition_extract.py --help
 python3 scripts/assemble_query_bundle.py --help
 python3 scripts/run_business_report.py --help
 python3 scripts/run_weekly_report.py --help

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from generate_monthly_report_html import render
 from profile_monthly_data import profile
+from report_common import cleanup_partition_extracts
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +30,8 @@ def main() -> int:
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    finally:
+        cleanup_partition_extracts(args.bundle)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

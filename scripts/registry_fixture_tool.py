@@ -33,7 +33,7 @@ def generation_script() -> str:
 import {{ STRUCTURED_DATASET_REGISTRIES }} from './packages/domain/src/structured-registry.ts';
 import {{ STRUCTURED_QUERY_LIMITS }} from './packages/domain/src/structured-query.ts';
 const scoped = [{scoped}];
-const fieldResponse = (field) => ({{
+const fieldResponse = (field, includeRowStorage) => ({{
   canonicalName: field.canonicalName,
   sourceColumn: field.sourceColumn,
   aliases: field.aliases,
@@ -47,7 +47,7 @@ const fieldResponse = (field) => ({{
   capabilities: field.capabilities,
   indexStatus: field.indexStatus,
   ...(field.valueLimits === undefined ? {{}} : {{ valueLimits: field.valueLimits }}),
-  storage: field.storage,
+  ...(includeRowStorage && field.storage ? {{ storage: field.storage }} : {{}}),
 }});
 const payload = {{
   limits: STRUCTURED_QUERY_LIMITS,
@@ -55,8 +55,9 @@ const payload = {{
     const registry = STRUCTURED_DATASET_REGISTRIES[dataset];
     return {{
       dataset: registry.dataset,
-      rowTable: registry.rowTable,
-      fields: registry.fields.map(fieldResponse),
+      accessMode: registry.accessMode,
+      ...(registry.accessMode === "row_query" ? {{ rowTable: registry.rowTable }} : {{}}),
+      fields: registry.fields.map((field) => fieldResponse(field, registry.accessMode === "row_query")),
     }};
   }}),
 }};
