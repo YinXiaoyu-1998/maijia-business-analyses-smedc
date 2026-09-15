@@ -35,6 +35,9 @@ class DateWindow:
     def overlaps(self, other: "DateWindow") -> bool:
         return self.start <= other.end and other.start <= self.end
 
+    def touches(self, other: "DateWindow") -> bool:
+        return self.start <= other.end + timedelta(days=1) and other.start <= self.end + timedelta(days=1)
+
 
 @dataclass(frozen=True)
 class FieldRef:
@@ -167,8 +170,9 @@ def registry_by_dataset(registry: dict[str, Any]) -> tuple[dict[str, dict[str, A
             raise PlanError("malformed registry envelope: dataset entry must be an object")
         name = dataset.get("dataset")
         fields = dataset.get("fields")
-        if not isinstance(name, str) or not isinstance(fields, list):
-            raise PlanError("malformed registry envelope: dataset requires dataset and fields")
+        access_mode = dataset.get("accessMode")
+        if not isinstance(name, str) or not isinstance(fields, list) or access_mode not in {"partition_extract", "row_query"}:
+            raise PlanError("malformed registry envelope: dataset requires dataset, accessMode, and fields")
         if name in by_dataset:
             raise PlanError(f"malformed registry envelope: duplicate dataset {name}")
         field_map: dict[str, dict[str, Any]] = {}
@@ -242,6 +246,7 @@ def load_coverage(
     config: dict[str, Any],
     registry: dict[str, dict[str, Any]],
     coverage_dir: Path,
+    enterprise_name: str,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
     coverage: dict[str, dict[str, Any]] = {}
     notices: list[dict[str, str]] = []
@@ -256,11 +261,32 @@ def load_coverage(
             }
             continue
         envelope = load_mcp_json(path, "coverage response")
-        if (
-            envelope.get("dataset") != dataset_name
-            or envelope.get("metadataPolicy") != dataset_config["metadataPolicy"]
-            or not isinstance(envelope.get("sources"), list)
-        ):
+        if envelope.get("dataset") != dataset_name:
+            raise PlanError(f"malformed coverage envelope for {dataset_name}")
+        if registry[dataset_name]["accessMode"] == "partition_extract":
+            enterprises = envelope.get("enterprises")
+            if envelope.get("accessMode") != "partition_extract" or not isinstance(enterprises, list):
+                raise PlanError(f"malformed partition coverage envelope for {dataset_name}")
+            selected = [item for item in enterprises if isinstance(item, dict) and item.get("enterpriseName") == enterprise_name]
+            if len(selected) > 1:
+                raise PlanError(f"partition coverage repeats enterprise {enterprise_name} for {dataset_name}")
+            for item in selected:
+                if not isinstance(item.get("startDate"), str) or not isinstance(item.get("endDate"), str):
+                    raise PlanError(f"malformed partition coverage dates for {dataset_name}")
+                if parse_date(item["startDate"], f"{dataset_name}.startDate") > parse_date(item["endDate"], f"{dataset_name}.endDate"):
+                    raise PlanError(f"malformed partition coverage range for {dataset_name}")
+                if not isinstance(item.get("stores"), list):
+                    raise PlanError(f"malformed partition coverage stores for {dataset_name}")
+            coverage[dataset_name] = {
+                "dataset": dataset_name,
+                "accessMode": "partition_extract",
+                "metadataPolicy": "window",
+                "enterpriseName": enterprise_name,
+                "sources": selected,
+                "readable": True,
+            }
+            continue
+        if envelope.get("metadataPolicy") != dataset_config["metadataPolicy"] or not isinstance(envelope.get("sources"), list):
             raise PlanError(f"malformed coverage envelope for {dataset_name}")
         for source in envelope["sources"]:
             if not isinstance(source, dict):
@@ -371,6 +397,18 @@ def source_summaries(coverage: dict[str, Any], windows: dict[str, DateWindow]) -
         return result
 
     for source in sorted(coverage.get("sources", []), key=lambda item: (item["startDate"], item["endDate"])):
+        if coverage.get("accessMode") == "partition_extract":
+            result["sources"].append(
+                {
+                    "enterpriseName": source["enterpriseName"],
+                    "startDate": source["startDate"],
+                    "endDate": source["endDate"],
+                    "partitionCount": source.get("partitionCount"),
+                    "totalRowCount": source.get("totalRowCount"),
+                    "stores": source.get("stores", []),
+                }
+            )
+            continue
         result["sources"].append(
             {
                 "startDate": source["startDate"],
@@ -538,10 +576,13 @@ def ensure_numeric_weighted_avg(registry: dict[str, dict[str, Any]], dataset_nam
 
 
 def validate_job(job: dict[str, Any], registry: dict[str, dict[str, Any]], limits: dict[str, int]) -> None:
-    if job["tool"] != "query_structured_dataset":
+    if job["tool"] not in {"query_structured_dataset", "local_partition_aggregate"}:
         raise PlanError(f"job {job['id']} uses unsupported tool {job['tool']}")
     query = job["input"]
     dataset_name = query["dataset"]
+    expected_tool = "local_partition_aggregate" if registry[dataset_name]["accessMode"] == "partition_extract" else "query_structured_dataset"
+    if job["tool"] != expected_tool:
+        raise PlanError(f"job {job['id']} must use {expected_tool} for {dataset_name}")
     fields = registry[dataset_name]["_fields"]
     allowed_query_keys = {"dataset", "filter", "groupBy", "aggregates", "select", "sort", "page"}
     unknown_keys = set(query) - allowed_query_keys
@@ -641,7 +682,7 @@ def aggregate_job(
         query["filter"] = {"field": date_field, "op": "between", "value": [window.start.isoformat(), window.end.isoformat()]}
     return {
         "id": job_id,
-        "tool": "query_structured_dataset",
+        "tool": "local_partition_aggregate" if registry[dataset_name]["accessMode"] == "partition_extract" else "query_structured_dataset",
         "input": query,
         "outputFile": f"query-results/{output_file}.json",
         "module": module,
@@ -728,6 +769,46 @@ def add_if_covered(
                 notices.append(make_partial_notice(dataset_name, window, module, gaps))
 
 
+def build_extracts(jobs: list[dict[str, Any]], enterprise_name: str) -> list[dict[str, Any]]:
+    by_dataset: dict[str, list[DateWindow]] = {}
+    for job in jobs:
+        if job["tool"] != "local_partition_aggregate":
+            continue
+        query = job["input"]
+        filter_spec = query.get("filter")
+        values = filter_spec.get("value") if isinstance(filter_spec, dict) else None
+        if not isinstance(filter_spec, dict) or filter_spec.get("op") != "between" or not isinstance(values, list) or len(values) != 2:
+            raise PlanError(f"local job {job['id']} must have one between date filter")
+        by_dataset.setdefault(query["dataset"], []).append(
+            DateWindow(job["id"], parse_date(values[0], f"{job['id']}.start"), parse_date(values[1], f"{job['id']}.end"))
+        )
+
+    extracts: list[dict[str, Any]] = []
+    for dataset_name in sorted(by_dataset):
+        merged: list[DateWindow] = []
+        for window in sorted(by_dataset[dataset_name], key=lambda item: (item.start, item.end)):
+            if merged and merged[-1].touches(window):
+                previous = merged[-1]
+                merged[-1] = DateWindow(previous.name, min(previous.start, window.start), max(previous.end, window.end))
+            else:
+                merged.append(window)
+        for index, window in enumerate(merged, start=1):
+            extracts.append(
+                {
+                    "id": f"{dataset_name}_extract_{index}",
+                    "tool": "download_structured_partitions",
+                    "input": {
+                        "dataset": dataset_name,
+                        "enterpriseName": enterprise_name,
+                        "startDate": window.start.strftime("%Y%m%d"),
+                        "endDate": window.end.strftime("%Y%m%d"),
+                    },
+                    "outputFile": f"partition-extracts/{dataset_name}_{index}.json",
+                }
+            )
+    return extracts
+
+
 def build_plan(
     config: dict[str, Any],
     registry: dict[str, dict[str, Any]],
@@ -735,6 +816,7 @@ def build_plan(
     coverage: dict[str, dict[str, Any]],
     report_type: str,
     windows: dict[str, DateWindow],
+    enterprise_name: str,
 ) -> dict[str, Any]:
     business_date = require_field(config, registry, "business.date", "filter").canonical
     business_store = require_field(config, registry, "business.store", "group").canonical
@@ -964,6 +1046,7 @@ def build_plan(
         },
         "coverage": coverage_manifest,
         "notices": ordered_notices,
+        "extracts": build_extracts(ordered_jobs, enterprise_name),
         "jobs": ordered_jobs,
     }
 
@@ -986,6 +1069,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--previous-end", required=True, help="Previous comparison window end date, YYYY-MM-DD.")
     parser.add_argument("--yoy-start", required=True, help="Year-over-year comparison window start date, YYYY-MM-DD.")
     parser.add_argument("--yoy-end", required=True, help="Year-over-year comparison window end date, YYYY-MM-DD.")
+    parser.add_argument("--enterprise-name", required=True, help="Enterprise/source name to select and download.")
     parser.add_argument("--registry-response", required=True, type=Path, help="Saved list_structured_datasets response.")
     parser.add_argument("--coverage-dir", required=True, type=Path, help="Directory with saved coverage_*.json envelopes.")
     parser.add_argument("--output", required=True, type=Path, help="Path for the query manifest JSON.")
@@ -1002,11 +1086,11 @@ def main(argv: list[str]) -> int:
         registry_response = load_mcp_json(args.registry_response, "registry response")
         registry, limits = registry_by_dataset(registry_response)
         validate_config_fields(config, registry)
-        coverage, coverage_notices = load_coverage(config, registry, args.coverage_dir)
-        manifest = build_plan(config, registry, limits, coverage, args.report_type, windows)
+        coverage, coverage_notices = load_coverage(config, registry, args.coverage_dir, args.enterprise_name)
+        manifest = build_plan(config, registry, limits, coverage, args.report_type, windows, args.enterprise_name)
         manifest["notices"] = sort_notices([*manifest["notices"], *coverage_notices])
         manifest["outputContract"] = {
-            "tool": "query_structured_dataset",
+            "tools": ["download_structured_partitions", "query_structured_dataset", "local_partition_aggregate"],
             "limits": limits,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)

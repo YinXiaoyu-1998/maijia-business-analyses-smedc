@@ -47,14 +47,16 @@ class SkillContractTests(unittest.TestCase):
         required_tools = [
             "list_structured_datasets",
             "describe_structured_dataset_coverage",
+            "download_structured_partitions",
             "query_structured_dataset",
+            "get_partition_import_status",
         ]
         for tool_name in required_tools:
             with self.subTest(tool=tool_name):
                 self.assertIn(tool_name, self.skill_text)
 
-        mcp_tool_names = set(re.findall(r"\b[a-z]+_structured_dataset(?:s|_coverage)?\b", self.skill_text))
-        self.assertEqual(set(required_tools), mcp_tool_names)
+        self.assertIn("Never call it for `business` or `dishes`", self.skill_text)
+        self.assertIn("Do not request, reveal, copy, or persist presigned URLs", self.skill_text)
 
     def test_skill_maps_supported_report_types_to_commands(self) -> None:
         expected_commands = {
@@ -67,6 +69,7 @@ class SkillContractTests(unittest.TestCase):
                 self.assertRegex(self.skill_text, rf"\b{report_type}\b")
                 self.assertIn(command, self.skill_text)
         self.assertIn("python3 scripts/build_query_plan.py", self.skill_text)
+        self.assertIn("python3 scripts/load_partition_extract.py", self.skill_text)
         self.assertIn("python3 scripts/assemble_query_bundle.py", self.skill_text)
 
     def test_skill_honors_explicit_report_periods(self) -> None:
@@ -85,8 +88,10 @@ class SkillContractTests(unittest.TestCase):
             "Use `enterprise-hub-mcp`",
             "Call `list_structured_datasets`",
             "Call `describe_structured_dataset_coverage`",
-            "Run `python3 scripts/build_query_plan.py`",
+            "run `python3 scripts/build_query_plan.py`",
+            "call `download_structured_partitions`",
             "Call `query_structured_dataset`",
+            "python3 scripts/load_partition_extract.py",
             "Run `python3 scripts/assemble_query_bundle.py`",
             "Run the report runner",
         ]
@@ -113,8 +118,9 @@ class SkillContractTests(unittest.TestCase):
             "Provenance",
             "technical provenance",
             "durable evidence",
-            "run-scoped scratch",
-            "Do not delete",
+            "Launcher partition CSVs",
+            "cleanup-only",
+            "finally",
         ]:
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.skill_text)
@@ -126,8 +132,8 @@ class SkillContractTests(unittest.TestCase):
         for required_boundary in [
             "Do not use direct HTTP",
             "Do not handle passwords or tokens",
-            "Do not use signed-download",
-            "Do not ingest local CSV, XLSX, or workbook files",
+            "Do not request, reveal, copy, or persist presigned URLs",
+            "Do not ingest user-provided local CSV, XLSX, or workbook files",
             "Do not add monthly profit",
         ]:
             with self.subTest(required_boundary=required_boundary):
