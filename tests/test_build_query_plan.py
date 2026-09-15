@@ -12,7 +12,9 @@ SCRIPT = ROOT / "scripts" / "build_query_plan.py"
 
 
 class BuildQueryPlanTests(unittest.TestCase):
-    def run_plan(self, report_type: str = "weekly") -> tuple[subprocess.CompletedProcess[str], dict]:
+    def run_plan(
+        self, report_type: str = "weekly", *, empty_dish_catalog: bool = False
+    ) -> tuple[subprocess.CompletedProcess[str], dict]:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         run_dir = Path(temporary.name)
@@ -21,6 +23,11 @@ class BuildQueryPlanTests(unittest.TestCase):
         for dataset in ("business", "dishes", "dish_catalog"):
             (coverage_dir / f"coverage_{dataset}.json").write_bytes(
                 (FIXTURES / f"coverage_{dataset}.json").read_bytes()
+            )
+        if empty_dish_catalog:
+            (coverage_dir / "coverage_dish_catalog.json").write_text(
+                json.dumps({"dataset": "dish_catalog", "metadataPolicy": "snapshot", "sources": []}),
+                encoding="utf-8",
             )
         output = run_dir / "manifest.json"
         completed = subprocess.run(
@@ -83,6 +90,20 @@ class BuildQueryPlanTests(unittest.TestCase):
         self.assertEqual(len(manifest["extracts"]), 1)
         self.assertEqual(manifest["extracts"][0]["input"]["dataset"], "business")
         self.assertTrue(all(job["tool"] == "local_partition_aggregate" for job in manifest["jobs"]))
+
+    def test_weekly_plan_omits_catalog_job_when_no_snapshot_is_readable(self) -> None:
+        completed, manifest = self.run_plan(empty_dish_catalog=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(any(job["input"]["dataset"] == "dish_catalog" for job in manifest["jobs"]))
+        self.assertIn(
+            {
+                "code": "COVERAGE_WINDOW_MISSING",
+                "dataset": "dish_catalog",
+                "window": "current",
+                "module": "stallAttribution",
+            },
+            manifest["notices"],
+        )
 
 
 if __name__ == "__main__":

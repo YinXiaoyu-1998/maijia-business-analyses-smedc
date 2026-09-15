@@ -1017,15 +1017,20 @@ def build_plan(
                 window=windows[window_name],
                 module="stallAttribution",
             )
-        add_if_covered(
-            jobs,
-            notices,
-            coverage,
-            job=catalog_job(config, registry, limits, coverage),
-            datasets=["dish_catalog"],
-            window=None,
-            module="stallAttribution",
-        )
+        if coverage["dish_catalog"].get("sources"):
+            add_if_covered(
+                jobs,
+                notices,
+                coverage,
+                job=catalog_job(config, registry, limits, coverage),
+                datasets=["dish_catalog"],
+                window=None,
+                module="stallAttribution",
+            )
+        else:
+            notices.append(
+                make_notice("COVERAGE_WINDOW_MISSING", "dish_catalog", "current", "stallAttribution")
+            )
 
     coverage_manifest = {
         dataset_name: source_summaries(dataset_coverage, windows)
