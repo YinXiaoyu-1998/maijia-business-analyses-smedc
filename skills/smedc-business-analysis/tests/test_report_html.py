@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
 ORG_NAME = "示例餐饮管理有限公司"
+ORG_ERROR = "SMEDC account organization"
 
 
 def run_script(*args: str) -> subprocess.CompletedProcess[str]:
@@ -92,6 +93,15 @@ class ReportHtmlTests(unittest.TestCase):
         )
         self.assertEqual(profile.returncode, 0, profile.stderr)
         return output_dir
+
+    def corrupt_summary_organization(self, output_dir: Path, summary_name: str, value: object = None, *, remove: bool = False) -> None:
+        summary_path = output_dir / summary_name
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        if remove:
+            summary["meta"].pop("organization_name", None)
+        else:
+            summary["meta"]["organization_name"] = value
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def test_diagnosis_report_renders_business_charts_without_technical_provenance(self) -> None:
         _, html, summary = self.render_from_profile(
@@ -251,6 +261,30 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("company", rendered.stderr.lower())
         self.assertFalse(report_path.exists())
 
+    def test_weekly_renderer_validates_metadata_organization_even_with_company_override(self) -> None:
+        invalid_values = [
+            ("missing", None, True),
+            ("blank", "   ", False),
+            ("non_string", 123, False),
+        ]
+        for label, value, remove in invalid_values:
+            with self.subTest(label=label):
+                output_dir = self.profile_to_directory("profile_weekly_data.py", "weekly_bundle.json")
+                self.corrupt_summary_organization(output_dir, "weekly_meeting_summary.json", value, remove=remove)
+                report_path = output_dir / f"weekly-{label}-override.html"
+                rendered = run_script(
+                    "scripts/meeting_report_weekly.py",
+                    "--input-dir",
+                    str(output_dir),
+                    "--output",
+                    str(report_path),
+                    "--company",
+                    "董事会展示名称",
+                )
+                self.assertNotEqual(rendered.returncode, 0)
+                self.assertIn(ORG_ERROR, rendered.stderr)
+                self.assertFalse(report_path.exists())
+
     def test_monthly_renderer_uses_metadata_organization_title_by_default(self) -> None:
         output_dir = self.profile_to_directory("profile_monthly_data.py", "monthly_bundle.json")
         report_path = output_dir / "monthly-default.html"
@@ -306,6 +340,30 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertNotEqual(rendered.returncode, 0)
         self.assertIn("company", rendered.stderr.lower())
         self.assertFalse(report_path.exists())
+
+    def test_monthly_renderer_validates_metadata_organization_even_with_company_override(self) -> None:
+        invalid_values = [
+            ("missing", None, True),
+            ("blank", "   ", False),
+            ("non_string", 123, False),
+        ]
+        for label, value, remove in invalid_values:
+            with self.subTest(label=label):
+                output_dir = self.profile_to_directory("profile_monthly_data.py", "monthly_bundle.json")
+                self.corrupt_summary_organization(output_dir, "monthly_meeting_summary.json", value, remove=remove)
+                report_path = output_dir / f"monthly-{label}-override.html"
+                rendered = run_script(
+                    "scripts/meeting_report_monthly.py",
+                    "--input-dir",
+                    str(output_dir),
+                    "--output",
+                    str(report_path),
+                    "--company",
+                    "董事会展示名称",
+                )
+                self.assertNotEqual(rendered.returncode, 0)
+                self.assertIn(ORG_ERROR, rendered.stderr)
+                self.assertFalse(report_path.exists())
 
     def test_weekly_report_marks_stall_and_product_panels_partial_when_data_is_missing(self) -> None:
         bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))

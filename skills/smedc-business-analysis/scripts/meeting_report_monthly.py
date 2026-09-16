@@ -84,7 +84,8 @@ def presentation_company_override(company: str | None) -> str | None:
 
 def build_payload(input_dir: Path, company: str | None = None) -> dict[str, Any]:
     summary = json.loads((input_dir / "monthly_meeting_summary.json").read_text(encoding="utf-8"))
-    report_company = presentation_company_override(company) or organization_name_from_metadata(summary)
+    organization_name = organization_name_from_metadata(summary)
+    report_company = presentation_company_override(company) or organization_name
     comparison = read_csv(input_dir / "monthly_store_comparison.csv")
     segments = read_csv(input_dir / "star_problem_stores.csv")
     drivers = read_csv(input_dir / "store_driver_summary.csv")
