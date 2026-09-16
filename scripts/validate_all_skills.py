@@ -51,6 +51,9 @@ def verify_self_contained(skill_dir: Path, all_skills: list[Path]) -> None:
 
 
 def main() -> int:
+    repository_tests = ROOT / "tests"
+    if any(repository_tests.glob("test_*.py")):
+        run([sys.executable, "-m", "unittest", "discover", "-s", str(repository_tests), "-v"], cwd=ROOT)
     skills = skill_dirs()
     for skill_dir in skills:
         verify_self_contained(skill_dir, skills)

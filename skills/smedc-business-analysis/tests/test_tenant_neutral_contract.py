@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY_ROOT = ROOT.parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
 ORG_NAME = "示例餐饮管理有限公司"
 ORG_ERROR = "SMEDC account organization"
@@ -43,18 +42,6 @@ def h1_texts(html: str) -> list[str]:
 
 
 class TenantNeutralContractTests(unittest.TestCase):
-    def test_repository_readmes_install_only_the_core_skill_subtree(self) -> None:
-        source = "https://github.com/YinXiaoyu-1998/smedc-mcp-skill.git"
-        for name in ("README.md", "README.zh.md"):
-            with self.subTest(readme=name):
-                text = (REPOSITORY_ROOT / name).read_text(encoding="utf-8")
-                self.assertIn(f"git clone {source} /tmp/smedc-mcp-skill", text)
-                self.assertIn(
-                    "cp -R /tmp/smedc-mcp-skill/skills/smedc-mcp ~/.agents/skills/smedc-mcp",
-                    text,
-                )
-                self.assertNotIn(f"git clone {source} ~/.agents/skills/smedc-mcp", text)
-
     def render_report(self, runner: str, fixture_name: str) -> str:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
