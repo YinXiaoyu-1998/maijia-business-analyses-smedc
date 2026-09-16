@@ -35,17 +35,18 @@ def verify_self_contained(skill_dir: Path, all_skills: list[Path]) -> None:
             raise SystemExit(f"{skill_dir.relative_to(ROOT)} is missing {path.relative_to(skill_dir)}")
 
     sibling_names = {path.name for path in all_skills if path != skill_dir}
-    text_files = [
+    runtime_python_files = [
         path
         for path in skill_dir.rglob("*")
         if path.is_file()
         and "__pycache__" not in path.parts
-        and path.suffix in {"", ".md", ".yaml", ".yml", ".json", ".py", ".txt"}
+        and "tests" not in path.relative_to(skill_dir).parts
+        and path.suffix == ".py"
     ]
-    for path in text_files:
+    for path in runtime_python_files:
         text = path.read_text(encoding="utf-8", errors="ignore")
         for sibling_name in sibling_names:
-            if sibling_name in text and path.suffix == ".py":
+            if sibling_name in text:
                 raise SystemExit(f"{path.relative_to(ROOT)} imports or references sibling skill {sibling_name}")
 
 

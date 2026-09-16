@@ -7,8 +7,7 @@
 ## Skills
 
 - `skills/smedc-business-analysis/`：基于 SMEDC 结构化经营数据，生成租户中立的经营诊断、周会报表和月会报表。
-
-本任务不包含 delivery-ledger sibling。
+- `skills/smedc-delivery-ledger/`：进货台帐查询与法定 CSV 导出，以及按收货单号关联检疫证明照片的使用指引。
 
 ## 安装
 
@@ -27,7 +26,17 @@ git clone https://github.com/YinXiaoyu-1998/smedc-companion-skills.git /tmp/smed
 cp -R /tmp/smedc-companion-skills/skills/smedc-business-analysis ~/.agents/skills/smedc-business-analysis
 ```
 
+安装 delivery-ledger skill 时同样只复制它自己的 subtree：
+
+```bash
+mkdir -p ~/.agents/skills
+git clone https://github.com/YinXiaoyu-1998/smedc-companion-skills.git /tmp/smedc-companion-skills
+cp -R /tmp/smedc-companion-skills/skills/smedc-delivery-ledger ~/.agents/skills/smedc-delivery-ledger
+```
+
 business-analysis skill 需要已认证的 `smedc-mcp` session，使用 `smedc-mcp-launcher@0.5.0` 和 MCP entry `smedc`。如果缺少前置项，必须先停止报表数据访问，并在安装前请求员工明确授权。它不会自动安装其他 companion skill。
+
+delivery-ledger skill 使用同一个已认证的 `smedc-mcp` 前置项来查询台帐、准备 CSV 导出源数据、以及操作检疫证明照片。它不会自动安装其他 companion skill。
 
 ## 开发
 
@@ -37,14 +46,16 @@ business-analysis skill 需要已认证的 `smedc-mcp` session，使用 `smedc-m
 python3 scripts/validate_all_skills.py
 ```
 
-直接运行当前 skill 检查：
+直接运行单个 skill 检查：
 
 ```bash
 python3 -m unittest discover -s skills/smedc-business-analysis/tests -v
 python3 /Users/xiaoyuyin/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/smedc-business-analysis
+python3 -m unittest discover -s skills/smedc-delivery-ledger/tests -v
+python3 /Users/xiaoyuyin/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/smedc-delivery-ledger
 ```
 
-business-analysis 运行时脚本只使用 Python standard library。测试套件仅为了校验 `agents/openai.yaml` 使用 PyYAML；需要时从 skill subtree 安装开发依赖：
+运行时脚本只使用 Python standard library。business-analysis 测试套件仅为了校验 `agents/openai.yaml` 使用 PyYAML；需要时从 business-analysis subtree 安装开发依赖：
 
 ```bash
 python3 -m pip install -r skills/smedc-business-analysis/requirements-dev.txt
