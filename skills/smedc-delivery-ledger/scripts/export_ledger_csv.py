@@ -78,13 +78,9 @@ def page_fingerprint(page: dict[str, Any]) -> str:
 
 
 def page_profile(page: dict[str, Any]) -> Any:
-    if "profile" in page:
-        return page["profile"]
-    if "presentationProfile" in page:
-        return page["presentationProfile"]
-    if "structuredProfile" in page:
-        return page["structuredProfile"]
-    raise ExportError("page is missing profile")
+    if "presentation" in page:
+        return page["presentation"]
+    raise ExportError("page is missing presentation")
 
 
 def page_rows(page: dict[str, Any]) -> Any:
@@ -146,7 +142,7 @@ def validate_pages(pages: list[dict[str, Any]]) -> list[list[str]]:
         if page.get("mode") != MODE:
             raise ExportError(f"page {page_index} mode must be {MODE}")
         if page_profile(page) != EXPECTED_PROFILE:
-            raise ExportError(f"page {page_index} profile does not match {EXPECTED_PROFILE['id']}")
+            raise ExportError(f"page {page_index} presentation does not match {EXPECTED_PROFILE['id']}")
 
         rows = page_rows(page)
         if not isinstance(rows, list):

@@ -34,7 +34,7 @@ def page(rows):
     return {
         "dataset": "delivery_ledger",
         "mode": "detail",
-        "profile": PROFILE,
+        "presentation": PROFILE,
         "rows": rows,
         "nextCursor": None,
     }
@@ -89,12 +89,12 @@ class ExportLedgerCsvTests(unittest.TestCase):
             if message_fragment:
                 self.assertIn(message_fragment, result.stderr)
 
-    def test_exports_one_page_with_bom_exact_headers_and_order(self):
+    def test_exports_valid_object_with_presentation_bom_exact_headers_and_order(self):
         rows = self.assert_export_ok(page([complete_row()]))
         self.assertEqual(rows[0], HEADERS)
         self.assertEqual(rows[1], ["牛奶", "250ml", "12.50", "99.90", "2026-09-01", "180天", "上海供应商A", "上海市黄浦区", "'+8613800138000", "2026-09-15"])
 
-    def test_exports_multiple_pages_preserving_page_and_row_order(self):
+    def test_exports_valid_presentation_array_preserving_page_and_row_order(self):
         payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
         rows = self.assert_export_ok(payload)
         self.assertEqual(rows[0], HEADERS)
@@ -135,7 +135,7 @@ class ExportLedgerCsvTests(unittest.TestCase):
         self.assert_export_fails(page([complete_row(purchase_date="2026-02-30")]), "purchase_date")
         self.assert_export_fails(page([complete_row(production_date_or_batch="20260901")]), "production_date_or_batch")
 
-    def test_rejects_wrong_dataset_mode_and_profile(self):
+    def test_rejects_wrong_dataset_mode_and_presentation(self):
         bad = page([complete_row()])
         bad["dataset"] = "business"
         self.assert_export_fails(bad, "dataset")
@@ -143,11 +143,23 @@ class ExportLedgerCsvTests(unittest.TestCase):
         bad["mode"] = "summary"
         self.assert_export_fails(bad, "mode")
         bad = page([complete_row()])
-        bad["profile"] = {**PROFILE, "title": "wrong"}
-        self.assert_export_fails(bad, "profile")
+        bad["presentation"] = {**PROFILE, "title": "wrong"}
+        self.assert_export_fails(bad, "presentation")
         bad = page([complete_row()])
-        bad["profile"] = {**PROFILE, "columns": list(reversed(PROFILE["columns"]))}
-        self.assert_export_fails(bad, "profile")
+        bad["presentation"] = {**PROFILE, "columns": list(reversed(PROFILE["columns"]))}
+        self.assert_export_fails(bad, "presentation")
+
+    def test_rejects_missing_presentation_and_unsupported_aliases(self):
+        valid = page([complete_row()])
+        missing = dict(valid)
+        del missing["presentation"]
+        self.assert_export_fails(missing, "presentation")
+
+        for alias in ("profile", "presentationProfile", "structuredProfile"):
+            alias_only = dict(missing)
+            alias_only[alias] = PROFILE
+            with self.subTest(alias=alias):
+                self.assert_export_fails(alias_only, "presentation")
 
     def test_rejects_missing_required_fields_and_non_scalar_values(self):
         row = complete_row()

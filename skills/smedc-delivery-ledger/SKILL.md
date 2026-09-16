@@ -57,7 +57,7 @@ If `smedc-mcp` is not installed, do not begin ledger or photo access. Explain th
 
 ## CSV Export
 
-Use `scripts/export_ledger_csv.py` only when the user requests CSV output. Save one exact `query_structured_dataset` result object, or an array of paginated result objects in request order, as UTF-8 JSON and run:
+Use `scripts/export_ledger_csv.py` only when the user requests CSV output. Save one exact `query_structured_dataset` result object containing the service `presentation` key, or an array of paginated result objects in request order, as UTF-8 JSON and run:
 
 ```bash
 python3 scripts/export_ledger_csv.py INPUT_JSON OUTPUT_CSV
@@ -69,7 +69,7 @@ Use `--overwrite` only when the user explicitly asks to replace an existing CSV:
 python3 scripts/export_ledger_csv.py INPUT_JSON OUTPUT_CSV --overwrite
 ```
 
-The exporter writes UTF-8 with BOM, uses the ten Chinese headers in statutory order, validates dataset/mode/profile/rows before writing, quotes with Python standard-library `csv.writer`, prefixes spreadsheet formula-leading cells with a single quote, and atomically replaces output through a temporary file.
+The exporter writes UTF-8 with BOM, uses the ten Chinese headers in statutory order, validates dataset/mode/presentation/rows before writing, quotes with Python standard-library `csv.writer`, prefixes spreadsheet formula-leading cells with a single quote, and atomically replaces output through a temporary file.
 
 ## Quarantine-Certificate Photos
 
