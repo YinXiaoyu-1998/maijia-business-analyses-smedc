@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--company")
     return parser.parse_args()
 
 
@@ -32,7 +33,7 @@ def main() -> int:
     try:
         organization_name = organization_name_from_current_user_file(args.current_user) if args.current_user else None
         summary = profile(args.bundle, args.output_dir, organization_name)
-        result = render(args.output_dir, args.report)
+        result = render(args.output_dir, args.report, args.company)
         result["notices"] = summary.get("data_gaps", [])
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)

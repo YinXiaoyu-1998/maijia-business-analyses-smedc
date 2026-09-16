@@ -27,7 +27,6 @@ NULLABLE_FIELDS = {
 }
 FORMULA_PREFIXES = ("=", "+", "-", "@")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-DATE_LIKE_RE = re.compile(r"^[0-9-]+$")
 
 
 class ExportError(ValueError):
@@ -118,8 +117,6 @@ def normalize_cell(row: dict[str, Any], field: str, page_index: int, row_index: 
         cell = str(value)
 
     if field == "purchase_date":
-        validate_date(cell, field)
-    elif field == "production_date_or_batch" and cell and DATE_LIKE_RE.fullmatch(cell):
         validate_date(cell, field)
 
     if cell.startswith(FORMULA_PREFIXES):

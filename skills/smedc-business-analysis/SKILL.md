@@ -102,6 +102,8 @@ If `smedc-mcp` is not installed, do not begin report data access. Explain that i
    python3 scripts/run_monthly_report.py --bundle runs/RUN_ID/bundle.json --current-user runs/RUN_ID/current_user.json --output-dir runs/RUN_ID/facts --report runs/RUN_ID/report.html
    ```
 
+   For weekly or monthly reports only, append `--company "展示标题公司名"` when the user explicitly wants a different company name in the rendered title. This is a nonblank presentation-only override: still require and validate `--current-user`, keep `organizationName` in report metadata, and never use the override for authorization, enterprise/data selection, query planning, jobs, or partitions. Diagnosis reports do not accept this override.
+
 Every runner deletes only the launcher extract directories recorded in the bundle in a `finally` block.
 
 ## Partial Reports

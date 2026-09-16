@@ -582,3 +582,61 @@ class ReportHtmlTests(unittest.TestCase):
         self.assertIn("weekly_store_comparison.csv", result["artifacts"]["facts"])
         self.assertEqual(result["notices"], [])
         self.assertTrue(report_path.exists())
+
+    def test_weekly_and_monthly_runners_accept_company_title_override(self) -> None:
+        cases = [
+            ("run_weekly_report.py", "weekly_bundle.json", "周经营会报"),
+            ("run_monthly_report.py", "monthly_bundle.json", "月经营会报"),
+        ]
+        for runner, fixture_name, suffix in cases:
+            with self.subTest(runner=runner):
+                temporary = tempfile.TemporaryDirectory()
+                self.addCleanup(temporary.cleanup)
+                output_dir = Path(temporary.name)
+                report_path = output_dir / "report.html"
+                completed = run_script(
+                    f"scripts/{runner}",
+                    "--bundle",
+                    str(FIXTURES / fixture_name),
+                    "--current-user",
+                    str(FIXTURES / "current_user_response.json"),
+                    "--output-dir",
+                    str(output_dir / "facts"),
+                    "--report",
+                    str(report_path),
+                    "--company",
+                    "董事会展示名称",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                html = report_path.read_text(encoding="utf-8")
+                payload = embedded_payload(html)
+                self.assertIn(f"<h1>董事会展示名称{suffix}</h1>", html)
+                self.assertEqual(payload["meta"]["title"], f"董事会展示名称{suffix}")
+                self.assertEqual(payload["meta"]["organization_name"], ORG_NAME)
+
+    def test_weekly_and_monthly_renderers_escape_dynamic_company_titles(self) -> None:
+        malicious_company = '<img src=x onerror="alert(1)">'
+        cases = [
+            ("profile_weekly_data.py", "weekly_bundle.json", "meeting_report_weekly.py", "--output"),
+            ("profile_weekly_data.py", "weekly_bundle.json", "generate_weekly_report_html.py", "--report"),
+            ("profile_monthly_data.py", "monthly_bundle.json", "meeting_report_monthly.py", "--output"),
+            ("profile_monthly_data.py", "monthly_bundle.json", "generate_monthly_report_html.py", "--report"),
+        ]
+        for profile_script, fixture_name, renderer, output_flag in cases:
+            with self.subTest(renderer=renderer):
+                output_dir = self.profile_to_directory(profile_script, fixture_name)
+                report_path = output_dir / f"{renderer}.html"
+                completed = run_script(
+                    f"scripts/{renderer}",
+                    "--input-dir",
+                    str(output_dir),
+                    output_flag,
+                    str(report_path),
+                    "--company",
+                    malicious_company,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                html = report_path.read_text(encoding="utf-8")
+                self.assertNotIn("<img src=x", html)
+                self.assertIn("&lt;img src=x", html)
+                self.assertEqual(embedded_payload(html)["meta"]["company"], malicious_company)

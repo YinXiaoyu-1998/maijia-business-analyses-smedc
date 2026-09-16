@@ -19,11 +19,13 @@ from meeting_report_weekly import (
     build_product_sales_per_10k_payload,
     build_stall_sales_mix_payload,
     compact_daypart_drivers,
+    escaped_report_title,
     median,
     pct_change,
     read_csv,
     read_optional_csv,
     safe_sum,
+    serialized_payload_for_html,
 )
 
 
@@ -251,8 +253,9 @@ def monthly_template() -> str:
 
 def generate(input_dir: Path, output: Path, company: str | None = None) -> None:
     payload = build_payload(input_dir, company)
-    html = monthly_template().replace("__TITLE__", payload["meta"]["title"]).replace("__REPORT_TITLE__", payload["meta"]["title"])
-    html = html.replace("__PAYLOAD__", json.dumps(payload, ensure_ascii=False))
+    title = escaped_report_title(payload["meta"]["title"])
+    html = monthly_template().replace("__TITLE__", title).replace("__REPORT_TITLE__", title)
+    html = html.replace("__PAYLOAD__", serialized_payload_for_html(payload))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html, encoding="utf-8")
     print(output)

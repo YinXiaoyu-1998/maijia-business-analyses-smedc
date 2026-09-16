@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from generate_business_report_html import public_payload
-from meeting_report_weekly import HTML_TEMPLATE, build_payload
+from meeting_report_weekly import HTML_TEMPLATE, build_payload, escaped_report_title, serialized_payload_for_html
 
 
 def accessible_html(html: str) -> str:
@@ -51,13 +51,14 @@ def inject_missing_data_notice(html: str, messages: list[str]) -> str:
     return html.replace(placeholder, notice)
 
 
-def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
+def render(input_dir: Path, report_path: Path, company: str | None = None) -> dict[str, Any]:
     summary_path = input_dir / "weekly_meeting_summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    payload = build_payload(input_dir)
+    payload = build_payload(input_dir, company)
     report_payload = presentation_payload(payload)
-    html = HTML_TEMPLATE.replace("__TITLE__", str(payload["meta"]["title"]))
-    html = html.replace("__REPORT_TITLE__", str(payload["meta"]["title"]))
+    title = escaped_report_title(payload["meta"]["title"])
+    html = HTML_TEMPLATE.replace("__TITLE__", title)
+    html = html.replace("__REPORT_TITLE__", title)
     html = html.replace(
         '<script id="payload" type="application/json">',
         '<script type="application/json" id="report-data">',
@@ -65,7 +66,7 @@ def render(input_dir: Path, report_path: Path) -> dict[str, Any]:
     html = html.replace("getElementById('payload')", "getElementById('report-data')")
     html = html.replace(
         "__PAYLOAD__",
-        json.dumps(report_payload, ensure_ascii=False).replace("<", "\\u003c").replace("&", "\\u0026"),
+        serialized_payload_for_html(report_payload),
     )
     html = inject_missing_data_notice(html, list(report_payload.get("data_gaps", [])))
     html = accessible_html(html)
@@ -85,13 +86,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--company")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        result = render(args.input_dir, args.report)
+        result = render(args.input_dir, args.report, args.company)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

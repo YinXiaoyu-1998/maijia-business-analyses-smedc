@@ -8,10 +8,19 @@ import csv
 import json
 import sys
 from datetime import date, datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from identity import organization_name_from_metadata
+
+
+def escaped_report_title(value: Any) -> str:
+    return escape(str(value), quote=True)
+
+
+def serialized_payload_for_html(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace("&", "\\u0026")
 
 
 def read_csv(path: Path) -> list[dict[str, Any]]:
@@ -2057,8 +2066,9 @@ HTML_TEMPLATE = r'''<!doctype html>
 
 def generate(input_dir: Path, output: Path, company: str | None = None) -> None:
     payload = build_payload(input_dir, company)
-    html = HTML_TEMPLATE.replace("__TITLE__", payload["meta"]["title"]).replace("__REPORT_TITLE__", payload["meta"]["title"])
-    html = html.replace("__PAYLOAD__", json.dumps(payload, ensure_ascii=False))
+    title = escaped_report_title(payload["meta"]["title"])
+    html = HTML_TEMPLATE.replace("__TITLE__", title).replace("__REPORT_TITLE__", title)
+    html = html.replace("__PAYLOAD__", serialized_payload_for_html(payload))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(html, encoding="utf-8")
     print(output)

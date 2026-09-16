@@ -133,7 +133,12 @@ class ExportLedgerCsvTests(unittest.TestCase):
     def test_rejects_invalid_dates(self):
         self.assert_export_fails(page([complete_row(purchase_date="2026-9-15")]), "purchase_date")
         self.assert_export_fails(page([complete_row(purchase_date="2026-02-30")]), "purchase_date")
-        self.assert_export_fails(page([complete_row(production_date_or_batch="20260901")]), "production_date_or_batch")
+
+    def test_preserves_numeric_production_batch_identifiers(self):
+        for batch in ("12345678", "20260901", "2026-09-01"):
+            with self.subTest(batch=batch):
+                rows = self.assert_export_ok(page([complete_row(production_date_or_batch=batch)]))
+                self.assertEqual(rows[1][4], batch)
 
     def test_rejects_wrong_dataset_mode_and_presentation(self):
         bad = page([complete_row()])
