@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
+ORG_NAME = "示例餐饮管理有限公司"
 
 
 def run_script(*args: str) -> subprocess.CompletedProcess[str]:
@@ -41,6 +42,8 @@ def strip_embedded_scripts(html: str) -> str:
 
 def embedded_payload(html: str) -> dict:
     match = re.search(r'<script type="application/json" id="report-data">(.*?)</script>', html, re.DOTALL)
+    if match is None:
+        match = re.search(r'<script id="payload" type="application/json">(.*?)</script>', html, re.DOTALL)
     if match is None:
         raise AssertionError("report payload is missing")
     return json.loads(match.group(1))
@@ -75,6 +78,20 @@ class ReportHtmlTests(unittest.TestCase):
         result = json.loads(rendered.stdout)
         self.assertEqual(Path(result["artifacts"]["report"]), report_path)
         return report_path, report_path.read_text(encoding="utf-8"), json.loads((output_dir / summary_name).read_text(encoding="utf-8"))
+
+    def profile_to_directory(self, profile_script: str, fixture_name: str) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        output_dir = Path(tmp.name)
+        profile = run_script(
+            f"scripts/{profile_script}",
+            "--bundle",
+            str(FIXTURES / fixture_name),
+            "--output-dir",
+            str(output_dir),
+        )
+        self.assertEqual(profile.returncode, 0, profile.stderr)
+        return output_dir
 
     def test_diagnosis_report_renders_business_charts_without_technical_provenance(self) -> None:
         _, html, summary = self.render_from_profile(
@@ -161,6 +178,134 @@ class ReportHtmlTests(unittest.TestCase):
         forbidden = re.compile("|".join(["pro" + "fit", "monthly_" + "pro" + "fit", "利" + "润"]), re.IGNORECASE)
         self.assertNotRegex(html, forbidden)
         self.assertEqual(summary["meta"]["report_grain"], "month")
+
+    def test_diagnosis_renderer_rejects_company_override(self) -> None:
+        output_dir = self.profile_to_directory("profile_business_data.py", "diagnosis_bundle.json")
+        report_path = output_dir / "diagnosis-override.html"
+        rendered = run_script(
+            "scripts/generate_business_report_html.py",
+            "--input-dir",
+            str(output_dir),
+            "--report",
+            str(report_path),
+            "--company",
+            "伪造公司",
+        )
+        self.assertNotEqual(rendered.returncode, 0)
+        self.assertIn("--company", rendered.stderr)
+        self.assertFalse(report_path.exists())
+
+    def test_weekly_renderer_uses_metadata_organization_title_by_default(self) -> None:
+        output_dir = self.profile_to_directory("profile_weekly_data.py", "weekly_bundle.json")
+        report_path = output_dir / "weekly-default.html"
+        rendered = run_script("scripts/meeting_report_weekly.py", "--input-dir", str(output_dir), "--output", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        html = report_path.read_text(encoding="utf-8")
+        payload = embedded_payload(html)
+        self.assertIn(f"<h1>{ORG_NAME}周经营会报</h1>", html)
+        self.assertEqual(payload["meta"]["title"], f"{ORG_NAME}周经营会报")
+        self.assertEqual(payload["meta"]["organization_name"], ORG_NAME)
+
+    def test_weekly_renderer_accepts_nonblank_company_title_override_only_for_presentation(self) -> None:
+        output_dir = self.profile_to_directory("profile_weekly_data.py", "weekly_bundle.json")
+        default_report = output_dir / "weekly-default.html"
+        report_path = output_dir / "weekly-override.html"
+        default_rendered = run_script("scripts/meeting_report_weekly.py", "--input-dir", str(output_dir), "--output", str(default_report))
+        self.assertEqual(default_rendered.returncode, 0, default_rendered.stderr)
+        rendered = run_script(
+            "scripts/meeting_report_weekly.py",
+            "--input-dir",
+            str(output_dir),
+            "--output",
+            str(report_path),
+            "--company",
+            "董事会展示名称",
+        )
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+
+        default_payload = embedded_payload(default_report.read_text(encoding="utf-8"))
+        override_html = report_path.read_text(encoding="utf-8")
+        override_payload = embedded_payload(override_html)
+
+        self.assertIn("<h1>董事会展示名称周经营会报</h1>", override_html)
+        self.assertEqual(override_payload["meta"]["title"], "董事会展示名称周经营会报")
+        self.assertEqual(override_payload["meta"]["organization_name"], ORG_NAME)
+        self.assertEqual(override_payload["meta"]["target_windows"], default_payload["meta"]["target_windows"])
+        self.assertEqual(override_payload["comparison"], default_payload["comparison"])
+        self.assertEqual(override_payload["trend"], default_payload["trend"])
+        self.assertEqual(override_payload["availability"], default_payload["availability"])
+
+    def test_weekly_renderer_rejects_blank_company_title_override(self) -> None:
+        output_dir = self.profile_to_directory("profile_weekly_data.py", "weekly_bundle.json")
+        report_path = output_dir / "weekly-blank-override.html"
+        rendered = run_script(
+            "scripts/meeting_report_weekly.py",
+            "--input-dir",
+            str(output_dir),
+            "--output",
+            str(report_path),
+            "--company",
+            "   ",
+        )
+        self.assertNotEqual(rendered.returncode, 0)
+        self.assertIn("company", rendered.stderr.lower())
+        self.assertFalse(report_path.exists())
+
+    def test_monthly_renderer_uses_metadata_organization_title_by_default(self) -> None:
+        output_dir = self.profile_to_directory("profile_monthly_data.py", "monthly_bundle.json")
+        report_path = output_dir / "monthly-default.html"
+        rendered = run_script("scripts/meeting_report_monthly.py", "--input-dir", str(output_dir), "--output", str(report_path))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        html = report_path.read_text(encoding="utf-8")
+        payload = embedded_payload(html)
+        self.assertIn(f"<h1>{ORG_NAME}月经营会报</h1>", html)
+        self.assertEqual(payload["meta"]["title"], f"{ORG_NAME}月经营会报")
+        self.assertEqual(payload["meta"]["organization_name"], ORG_NAME)
+
+    def test_monthly_renderer_accepts_nonblank_company_title_override_only_for_presentation(self) -> None:
+        output_dir = self.profile_to_directory("profile_monthly_data.py", "monthly_bundle.json")
+        default_report = output_dir / "monthly-default.html"
+        override_report = output_dir / "monthly-override.html"
+        default_rendered = run_script("scripts/meeting_report_monthly.py", "--input-dir", str(output_dir), "--output", str(default_report))
+        self.assertEqual(default_rendered.returncode, 0, default_rendered.stderr)
+        override_rendered = run_script(
+            "scripts/meeting_report_monthly.py",
+            "--input-dir",
+            str(output_dir),
+            "--output",
+            str(override_report),
+            "--company",
+            "董事会展示名称",
+        )
+        self.assertEqual(override_rendered.returncode, 0, override_rendered.stderr)
+
+        default_payload = embedded_payload(default_report.read_text(encoding="utf-8"))
+        override_html = override_report.read_text(encoding="utf-8")
+        override_payload = embedded_payload(override_html)
+
+        self.assertIn("<h1>董事会展示名称月经营会报</h1>", override_html)
+        self.assertEqual(override_payload["meta"]["title"], "董事会展示名称月经营会报")
+        self.assertEqual(override_payload["meta"]["organization_name"], ORG_NAME)
+        self.assertEqual(override_payload["meta"]["target_windows"], default_payload["meta"]["target_windows"])
+        self.assertEqual(override_payload["comparison"], default_payload["comparison"])
+        self.assertEqual(override_payload["trend"], default_payload["trend"])
+        self.assertEqual(override_payload["availability"], default_payload["availability"])
+
+    def test_monthly_renderer_rejects_blank_company_title_override(self) -> None:
+        output_dir = self.profile_to_directory("profile_monthly_data.py", "monthly_bundle.json")
+        report_path = output_dir / "monthly-blank-override.html"
+        rendered = run_script(
+            "scripts/meeting_report_monthly.py",
+            "--input-dir",
+            str(output_dir),
+            "--output",
+            str(report_path),
+            "--company",
+            "   ",
+        )
+        self.assertNotEqual(rendered.returncode, 0)
+        self.assertIn("company", rendered.stderr.lower())
+        self.assertFalse(report_path.exists())
 
     def test_weekly_report_marks_stall_and_product_panels_partial_when_data_is_missing(self) -> None:
         bundle = json.loads((FIXTURES / "weekly_bundle.json").read_text(encoding="utf-8"))

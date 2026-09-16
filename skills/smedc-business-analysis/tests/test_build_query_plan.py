@@ -9,12 +9,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
 SCRIPT = ROOT / "scripts" / "build_query_plan.py"
+ORG_ERROR = "SMEDC account organization"
 
 
 class BuildQueryPlanTests(unittest.TestCase):
     def run_plan(
-        self, report_type: str = "weekly", *, empty_dish_catalog: bool = False
+        self,
+        report_type: str = "weekly",
+        *,
+        empty_dish_catalog: bool = False,
+        current_user: Path | None = FIXTURES / "current_user_response.json",
     ) -> tuple[subprocess.CompletedProcess[str], dict]:
+        completed, output = self.run_plan_command(
+            report_type=report_type,
+            empty_dish_catalog=empty_dish_catalog,
+            current_user=current_user,
+        )
+        return completed, json.loads(output.read_text(encoding="utf-8")) if output.exists() else {}
+
+    def run_plan_command(
+        self,
+        report_type: str = "weekly",
+        *,
+        empty_dish_catalog: bool = False,
+        current_user: Path | None = FIXTURES / "current_user_response.json",
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         run_dir = Path(temporary.name)
@@ -30,40 +49,41 @@ class BuildQueryPlanTests(unittest.TestCase):
                 encoding="utf-8",
             )
         output = run_dir / "manifest.json"
+        command = [
+            sys.executable,
+            str(SCRIPT),
+            "--report-type",
+            report_type,
+            "--enterprise-name",
+            "示例企业",
+            "--current-start",
+            "2026-07-25",
+            "--current-end",
+            "2026-07-31",
+            "--previous-start",
+            "2026-07-18",
+            "--previous-end",
+            "2026-07-24",
+            "--yoy-start",
+            "2025-07-26",
+            "--yoy-end",
+            "2025-08-01",
+            "--registry-response",
+            str(FIXTURES / "registry_response.json"),
+            "--coverage-dir",
+            str(coverage_dir),
+            "--output",
+            str(output),
+        ]
+        if current_user is not None:
+            command[6:6] = ["--current-user", str(current_user)]
         completed = subprocess.run(
-            [
-                sys.executable,
-                str(SCRIPT),
-                "--report-type",
-                report_type,
-                "--enterprise-name",
-                "示例企业",
-                "--current-user",
-                str(FIXTURES / "current_user_response.json"),
-                "--current-start",
-                "2026-07-25",
-                "--current-end",
-                "2026-07-31",
-                "--previous-start",
-                "2026-07-18",
-                "--previous-end",
-                "2026-07-24",
-                "--yoy-start",
-                "2025-07-26",
-                "--yoy-end",
-                "2025-08-01",
-                "--registry-response",
-                str(FIXTURES / "registry_response.json"),
-                "--coverage-dir",
-                str(coverage_dir),
-                "--output",
-                str(output),
-            ],
+            command,
             cwd=ROOT,
             text=True,
             capture_output=True,
         )
-        return completed, json.loads(output.read_text(encoding="utf-8")) if output.exists() else {}
+        return completed, output
 
     def test_weekly_plan_downloads_only_contiguous_partition_windows(self) -> None:
         completed, manifest = self.run_plan()
@@ -107,6 +127,45 @@ class BuildQueryPlanTests(unittest.TestCase):
             },
             manifest["notices"],
         )
+
+    def test_missing_current_user_flag_fails_before_writing_manifest(self) -> None:
+        completed, output = self.run_plan_command(current_user=None)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(ORG_ERROR, completed.stderr)
+        self.assertFalse(output.exists())
+
+    def test_missing_current_user_file_fails_before_writing_manifest(self) -> None:
+        completed, output = self.run_plan_command(current_user=Path("/tmp/smedc-missing-current-user.json"))
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(ORG_ERROR, completed.stderr)
+        self.assertFalse(output.exists())
+
+    def test_malformed_current_user_fails_before_writing_manifest(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        current_user = Path(temporary.name) / "current_user.json"
+        current_user.write_text("{not-json", encoding="utf-8")
+        completed, output = self.run_plan_command(current_user=current_user)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(ORG_ERROR, completed.stderr)
+        self.assertFalse(output.exists())
+
+    def test_blank_or_non_string_current_user_organization_fails_before_writing_manifest(self) -> None:
+        invalid_users = [
+            {"user": {"organizationName": ""}},
+            {"user": {"organizationName": "   "}},
+            {"user": {"organizationName": 123}},
+        ]
+        for payload in invalid_users:
+            with self.subTest(payload=payload):
+                temporary = tempfile.TemporaryDirectory()
+                self.addCleanup(temporary.cleanup)
+                current_user = Path(temporary.name) / "current_user.json"
+                current_user.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+                completed, output = self.run_plan_command(current_user=current_user)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(ORG_ERROR, completed.stderr)
+                self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

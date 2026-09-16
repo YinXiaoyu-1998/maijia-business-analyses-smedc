@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from identity import organization_name_from_current_user_file
+from identity import ORGANIZATION_ERROR, organization_name_from_current_user_file
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1095,6 +1095,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     try:
         args = parse_args(argv)
+        if args.current_user is None:
+            raise PlanError(ORGANIZATION_ERROR)
+        try:
+            organization_name = organization_name_from_current_user_file(args.current_user)
+        except ValueError as exc:
+            raise PlanError(ORGANIZATION_ERROR) from exc
         config = load_json(CONFIG_PATH, "business-analysis config")
         if config.get("schemaVersion") != 1:
             raise PlanError("unsupported config schemaVersion")
@@ -1103,7 +1109,6 @@ def main(argv: list[str]) -> int:
         registry, limits = registry_by_dataset(registry_response)
         validate_config_fields(config, registry)
         coverage, coverage_notices = load_coverage(config, registry, args.coverage_dir, args.enterprise_name)
-        organization_name = organization_name_from_current_user_file(args.current_user) if args.current_user else None
         manifest = build_plan(
             config,
             registry,

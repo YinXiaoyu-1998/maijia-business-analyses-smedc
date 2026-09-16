@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -72,9 +73,18 @@ def build_trend_comparison_entities(rows: list[dict[str, Any]]) -> list[dict[str
     return entities
 
 
+def presentation_company_override(company: str | None) -> str | None:
+    if company is None:
+        return None
+    stripped = company.strip()
+    if stripped == "":
+        raise ValueError("company override must be non-blank")
+    return stripped
+
+
 def build_payload(input_dir: Path, company: str | None = None) -> dict[str, Any]:
     summary = json.loads((input_dir / "monthly_meeting_summary.json").read_text(encoding="utf-8"))
-    report_company = company or organization_name_from_metadata(summary)
+    report_company = presentation_company_override(company) or organization_name_from_metadata(summary)
     comparison = read_csv(input_dir / "monthly_store_comparison.csv")
     segments = read_csv(input_dir / "star_problem_stores.csv")
     drivers = read_csv(input_dir / "store_driver_summary.csv")
@@ -247,14 +257,19 @@ def generate(input_dir: Path, output: Path, company: str | None = None) -> None:
     print(output)
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--company")
     args = parser.parse_args()
-    generate(args.input_dir, args.output, args.company)
+    try:
+        generate(args.input_dir, args.output, args.company)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
