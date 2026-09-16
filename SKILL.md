@@ -9,6 +9,14 @@ Generate Maijia Xiaoguan operating diagnosis, weekly meeting, and monthly meetin
 
 **REQUIRED SUB-SKILL:** Use enterprise-hub-mcp for official current-user Enterprise Hub install, update, repair, and login. Before fetching report data, use the latest launcher version currently approved by `enterprise-hub-mcp`; this reporting skill does not own the launcher version, installation mechanics, or authentication steps.
 
+If `enterprise-hub-mcp` is not installed, do not begin report data access. Explain that it is a
+required prerequisite, identify the official source at
+<https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill>, and offer to install it. Install it
+only when the employee explicitly authorizes its installation or has already requested installation
+of this reporting skill together with all required prerequisites. Never install it silently. After
+installation, reload the host's skill list when needed and continue only after reading the installed
+prerequisite and establishing its authenticated MCP session.
+
 ## Boundaries
 
 - Use an authenticated `enterprise-hub-mcp` session running the latest launcher version currently approved by that skill. Do not hard-code, reuse, or infer a launcher version from this reporting skill.
