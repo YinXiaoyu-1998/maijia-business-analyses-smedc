@@ -15,7 +15,8 @@ Install the prerequisite core skill first:
 
 ```bash
 mkdir -p ~/.agents/skills
-git clone https://github.com/YinXiaoyu-1998/smedc-mcp-skill.git ~/.agents/skills/smedc-mcp
+git clone https://github.com/YinXiaoyu-1998/smedc-mcp-skill.git /tmp/smedc-mcp-skill
+cp -R /tmp/smedc-mcp-skill/skills/smedc-mcp ~/.agents/skills/smedc-mcp
 ```
 
 Install the business-analysis skill by copying only its subtree:

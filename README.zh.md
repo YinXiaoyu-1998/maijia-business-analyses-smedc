@@ -15,7 +15,8 @@
 
 ```bash
 mkdir -p ~/.agents/skills
-git clone https://github.com/YinXiaoyu-1998/smedc-mcp-skill.git ~/.agents/skills/smedc-mcp
+git clone https://github.com/YinXiaoyu-1998/smedc-mcp-skill.git /tmp/smedc-mcp-skill
+cp -R /tmp/smedc-mcp-skill/skills/smedc-mcp ~/.agents/skills/smedc-mcp
 ```
 
 安装 business-analysis skill 时，只复制它自己的 subtree：
