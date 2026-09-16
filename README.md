@@ -1,106 +1,51 @@
-# maijia-business-analyses-smedc
+# smedc-companion-skills
 
-Enterprise Hub-backed reporting skill for Maijia operating reports.
+Companion Codex skills for SMEDC, the Small and Medium Enterprises Data Center.
 
-This repository adapts the report presentation and interactions from the original [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill while replacing local workbook reads with Enterprise Hub queries. It is released by the copyright holder under this repository's MIT license; see [LICENSE](LICENSE).
+This repository is organized as independently installable sibling skills under `skills/`. Each skill owns its own `SKILL.md`, metadata, scripts, config, tests, and development requirements. The repository root owns packaging documentation and cross-skill validation.
 
-This skill delegates launcher version selection to `enterprise-hub-mcp-skill` and uses the latest launcher version currently approved by that prerequisite skill. `business` and `dishes` are downloaded as authorized launcher-managed partitions and analyzed locally; `dish_catalog` remains a controlled row query.
+## Skills
+
+- `skills/smedc-business-analysis/`: tenant-neutral operating diagnosis, weekly meeting, and monthly meeting reports from SMEDC structured business datasets.
+
+The delivery-ledger sibling is intentionally not part of this task.
 
 ## Installation
 
-Prerequisite: install or update and then use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. Always use the latest launcher version currently approved by that prerequisite skill; this reporting skill intentionally carries no launcher version pin. If the prerequisite is missing, stop before report data access and offer its official installation. The employee must explicitly authorize that installation or have already requested this reporting skill together with all required prerequisites; never install it silently.
-
-Install this reporting skill in the cross-runtime user skills directory:
+Install the prerequisite core skill first:
 
 ```bash
 mkdir -p ~/.agents/skills
-git clone https://github.com/YinXiaoyu-1998/maijia-business-analyses-smedc.git ~/.agents/skills/maijia-business-analyses-smedc
+git clone https://github.com/YinXiaoyu-1998/smedc-mcp-skill.git ~/.agents/skills/smedc-mcp
 ```
 
-## Scope
+Install the business-analysis skill by copying only its subtree:
 
-Included:
+```bash
+mkdir -p ~/.agents/skills
+git clone https://github.com/YinXiaoyu-1998/smedc-companion-skills.git /tmp/smedc-companion-skills
+cp -R /tmp/smedc-companion-skills/skills/smedc-business-analysis ~/.agents/skills/smedc-business-analysis
+```
 
-- operating diagnosis, weekly meeting, and monthly meeting reports from Enterprise Hub structured datasets;
-- modules backed by the canonical `business`, `dishes`, and `dish_catalog` datasets;
-- honest partial-report behavior when optional data is absent or coverage is incomplete;
-- bounded-memory local aggregation of launcher-managed canonical partition CSVs and deterministic HTML report artifacts.
-
-Excluded by design:
-
-- direct Meituan browser export or download instructions;
-- direct HTTP, token, password, database, or service-configuration access;
-- user-provided local CSV/XLSX report ingestion as a compatibility source;
-- monthly profit or profit-rate workflows;
-- real customer data, credentials, or unpublished launcher pins.
-
-## Agent Workflow
-
-1. Use the prerequisite `enterprise-hub-mcp-skill` for current-user launcher install/update/login; continue only after the authenticated Enterprise Hub MCP session is available.
-2. Save the `list_structured_datasets` envelope as `registry_response.json`.
-3. Save `describe_structured_dataset_coverage` envelopes for `business`, `dishes`, and `dish_catalog` as `coverage_business.json`, `coverage_dishes.json`, and `coverage_dish_catalog.json`.
-4. Run `python3 scripts/build_query_plan.py` for `diagnosis`, `weekly`, or `monthly`, including the exact enterprise name from coverage.
-5. Execute every `extracts[]` entry with `download_structured_partitions`. The planner coalesces only overlapping or adjacent date windows.
-6. Execute only `query_structured_dataset` jobs (currently `dish_catalog`), following `nextCursor` until it is `null`.
-7. Run `python3 scripts/load_partition_extract.py`, then `python3 scripts/assemble_query_bundle.py`, then the matching renderer runner:
-   - diagnosis: `python3 scripts/run_business_report.py`
-   - weekly: `python3 scripts/run_weekly_report.py`
-   - monthly: `python3 scripts/run_monthly_report.py`
-8. Keep registry, coverage, manifest, aggregate query results, bundle, facts, and report HTML as provenance. Report runners always remove launcher extract directories in `finally`; a cleanup-only loader mode covers failures before assembly.
-
-Missing coverage or failed optional jobs should become partial or empty reports, not fabricated facts or service-health claims. Unsupported modules are hidden; the report uses short business-language notices and does not display query jobs, source files, IDs, coverage tables, or internal error codes.
-
-## Reporting semantics
-
-- Weekly trends use sixteen seven-day windows ending on the requested report end date. Monthly trends use calendar-month positions. Missing periods remain gaps and never shift current/prior-year alignment. After updating, regenerate the manifest and query responses: weekly income trends now query daily income, so old bundles containing only export week labels cannot supply the new date-grained input.
-- Product quantity is grouped by linked product name (falling back to sales product name) and sales class. Display names remain searchable aliases; both per-10K denominators retain their all-channel basis.
-- Catalog resolution tries the sales name first and the linked name second. Conflicting categories cannot overwrite each other; unresolved conflicts remain unmatched.
-- Diagnosis restores the original KPI, monthly trend, store portfolio, channel/member, daypart heatmap, and opportunity views. Store comparisons use the configured size cohorts. Opportunity values are explicit scenarios, not promised returns.
-- This skill remains bound to Enterprise Hub. If the service cannot provide a required field or dimension, defer the affected capability and explain the missing business information. Do not substitute local workbooks, infer unavailable values, or expand service scope to force parity. Profit reporting remains excluded.
-
-## Current Contract Files
-
-- `config/maijia.json` defines configuration format `1`, canonical datasets, Maijia store buckets, semantic field mappings, report modules, and query limits.
-- `tests/fixtures/registry_response.json` is the full scoped `list_structured_datasets` envelope for the reporting contract, covering every current `business`, `dishes`, and `dish_catalog` canonical field.
-- `tests/fixtures/coverage_business.json`, `tests/fixtures/coverage_dishes.json`, and `tests/fixtures/coverage_dish_catalog.json` are synthetic partition and row-query coverage envelopes.
-
-The fixtures use only synthetic company, document, import, and store names. They are meant for future query-plan and bundle-validation tests, not as production data.
-
-## Data Access Boundary
-
-Agents using this skill should call Enterprise Hub MCP tools through the user's authenticated launcher session:
-
-- `list_structured_datasets`
-- `describe_structured_dataset_coverage`
-- `download_structured_partitions`
-- `query_structured_dataset`
-
-Scripts in this repository validate saved MCP envelopes, stream only the launcher-managed partition directories returned by authenticated tools, and produce local aggregate/fact/report artifacts. They must not authenticate, start the launcher, call Enterprise Hub HTTP APIs directly, or read service internals.
+The business-analysis skill requires an authenticated `smedc-mcp` session using `smedc-mcp-launcher@0.5.0` and MCP entry `smedc`. If that prerequisite is missing, the skill must stop before report data access and ask for explicit authorization before installing it. It never installs another companion skill automatically.
 
 ## Development
 
-Runtime scripts use the Python standard library. The test suite uses PyYAML only to validate `agents/openai.yaml`; install dev dependencies with:
+Run all repository checks:
 
 ```bash
-python3 -m pip install -r requirements-dev.txt
+python3 scripts/validate_all_skills.py
 ```
 
-Run the repository checks:
+Run the current skill checks directly:
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 scripts/build_query_plan.py --help
-python3 scripts/load_partition_extract.py --help
-python3 scripts/assemble_query_bundle.py --help
-python3 scripts/run_business_report.py --help
-python3 scripts/run_weekly_report.py --help
-python3 scripts/run_monthly_report.py --help
+python3 -m unittest discover -s skills/smedc-business-analysis/tests -v
+python3 /Users/xiaoyuyin/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/smedc-business-analysis
 ```
 
-Maintainers can check or refresh the registry fixture against a local Enterprise Hub service checkout without adding any runtime dependency for report users:
+The business-analysis scripts use Python standard library at runtime. Its tests use PyYAML only to validate `agents/openai.yaml`; install development dependencies from the skill subtree when needed:
 
 ```bash
-python3 scripts/registry_fixture_tool.py check --service-repo /path/to/SME_DATA_CENTER
-python3 scripts/registry_fixture_tool.py refresh --service-repo /path/to/SME_DATA_CENTER
-SME_DATA_CENTER_REPO=/path/to/SME_DATA_CENTER python3 -m unittest tests.test_contract_fixtures.ContractFixtureTests.test_registry_fixture_matches_authoritative_current_registries -v
+python3 -m pip install -r skills/smedc-business-analysis/requirements-dev.txt
 ```

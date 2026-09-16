@@ -1,0 +1,17 @@
+{
+  "dataset": "dishes",
+  "accessMode": "partition_extract",
+  "enterprises": [
+    {
+      "enterpriseName": "示例企业",
+      "startDate": "2025-07-01",
+      "endDate": "2026-07-31",
+      "partitionCount": 792,
+      "totalRowCount": 58940,
+      "stores": [
+        { "storeId": "001", "storeName": "示例一店" },
+        { "storeId": "002", "storeName": "示例三店" }
+      ]
+    }
+  ]
+}

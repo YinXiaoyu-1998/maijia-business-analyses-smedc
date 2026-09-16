@@ -1,5 +1,0 @@
-interface:
-  display_name: "Maijia SMEDC Reports"
-  short_description: "Enterprise Hub Maijia diagnosis, weekly, monthly reports"
-  default_prompt: "Use $maijia-business-analyses-smedc to generate a Maijia diagnosis, weekly, or monthly report from Enterprise Hub MCP data."
-  brand_color: "#2563EB"
