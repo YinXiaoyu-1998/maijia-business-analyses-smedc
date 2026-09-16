@@ -8,7 +8,7 @@ This skill delegates launcher version selection to `enterprise-hub-mcp-skill` an
 
 ## Installation
 
-Prerequisite: install or update and then use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. Always use the latest launcher version currently approved by that prerequisite skill; this reporting skill intentionally carries no launcher version pin.
+Prerequisite: install or update and then use the [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) to configure, update, and log in to the official current-user Enterprise Hub MCP launcher. Always use the latest launcher version currently approved by that prerequisite skill; this reporting skill intentionally carries no launcher version pin. If the prerequisite is missing, stop before report data access and offer its official installation. The employee must explicitly authorize that installation or have already requested this reporting skill together with all required prerequisites; never install it silently.
 
 Install this reporting skill in the cross-runtime user skills directory:
 

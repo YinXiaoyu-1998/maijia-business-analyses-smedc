@@ -8,7 +8,7 @@
 
 ## 安装
 
-前置条件：先安装或更新并使用 [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) 配置、更新并登录官方 current-user Enterprise Hub MCP launcher。始终使用前置 skill 当前批准的 launcher 最新版；本 reporting skill 不保存任何 launcher 版本 pin，安装和认证流程也由前置 skill 负责。
+前置条件：先安装或更新并使用 [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) 配置、更新并登录官方 current-user Enterprise Hub MCP launcher。始终使用前置 skill 当前批准的 launcher 最新版；本 reporting skill 不保存任何 launcher 版本 pin，安装和认证流程也由前置 skill 负责。如果缺少前置 skill，必须先停止报表数据访问并提出从官方来源安装；员工必须明确同意安装，或已经明确要求安装本 reporting skill 及其全部必需前置项，绝不静默安装。
 
 将本 reporting skill 安装到跨运行时 user skills 目录：
 

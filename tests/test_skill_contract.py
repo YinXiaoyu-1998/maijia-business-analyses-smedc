@@ -43,6 +43,21 @@ class SkillContractTests(unittest.TestCase):
                 self.assertNotIn("/Users/xiaoyuyin/.agents/skills", text)
                 self.assertIsNone(re.search(r"npm install .*enterprise-hub-mcp-launcher", text))
 
+    def test_missing_prerequisite_is_offered_but_never_installed_silently(self) -> None:
+        for text in [self.skill_text, self.readme_text, self.readme_zh_text]:
+            with self.subTest(language=text.splitlines()[0]):
+                self.assertIn(
+                    "https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill",
+                    text,
+                )
+
+        self.assertIn("If `enterprise-hub-mcp` is not installed", self.skill_text)
+        self.assertIn("explicitly authorizes its installation", self.skill_text)
+        self.assertIn("Never install it silently", self.skill_text)
+        self.assertIn("do not begin report data access", self.skill_text)
+        self.assertIn("must explicitly authorize", self.readme_text)
+        self.assertIn("必须明确同意", self.readme_zh_text)
+
     def test_skill_names_only_the_required_enterprise_hub_mcp_tools(self) -> None:
         required_tools = [
             "list_structured_datasets",
