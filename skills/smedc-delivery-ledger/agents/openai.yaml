@@ -1,0 +1,5 @@
+interface:
+  display_name: "SMEDC Delivery Ledger"
+  short_description: "SMEDC ledger CSV and certificate photos"
+  default_prompt: "Use $smedc-delivery-ledger to query delivery ledger rows, export CSV, or manage receipt-linked quarantine-certificate photos."
+  brand_color: "#0F766E"

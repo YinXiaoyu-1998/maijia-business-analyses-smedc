@@ -1,0 +1,5 @@
+interface:
+  display_name: "SMEDC Business Analysis"
+  short_description: "SMEDC diagnosis, weekly, monthly reports"
+  default_prompt: "Use $smedc-business-analysis to generate a diagnosis, weekly, or monthly report from SMEDC MCP data."
+  brand_color: "#2563EB"

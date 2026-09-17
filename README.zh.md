@@ -1,106 +1,63 @@
-# maijia-business-analyses-smedc
+# smedc-companion-skills
 
-这是面向麦家经营诊断、周报和月报的 Enterprise Hub 结构化数据 reporting skill。
+这是 SMEDC（Small and Medium Enterprises Data Center）的 companion Codex skills 仓库。
 
-本仓库将原 [`maijia-business-analyse`](https://github.com/YinXiaoyu-1998/maijia-business-analyse) skill 的报告展示和交互适配到 Enterprise Hub 查询结果，由版权持有人按本仓库的 MIT 许可发布，见 [LICENSE](LICENSE)。
+本仓库采用 sibling skills 布局：每个 skill 都在 `skills/` 下独立拥有 `SKILL.md`、metadata、脚本、配置、测试和开发依赖。仓库根目录只负责安装说明和跨 skill 校验。
 
-本 skill 将 launcher 版本选择交给 `enterprise-hub-mcp-skill`，使用前置 skill 当前批准的 launcher 最新版。`business` 和 `dishes` 通过已认证 launcher 下载授权分区并在本地分析；`dish_catalog` 继续使用受控行查询。
+## Skills
+
+- `skills/smedc-business-analysis/`：基于 SMEDC 结构化经营数据，生成租户中立的经营诊断、周会报表和月会报表。
+- `skills/smedc-delivery-ledger/`：进货台帐查询与法定 CSV 导出，以及按收货单号关联检疫证明照片的使用指引。
 
 ## 安装
 
-前置条件：先安装或更新并使用 [`enterprise-hub-mcp-skill`](https://github.com/YinXiaoyu-1998/enterprise-hub-mcp-skill) 配置、更新并登录官方 current-user Enterprise Hub MCP launcher。始终使用前置 skill 当前批准的 launcher 最新版；本 reporting skill 不保存任何 launcher 版本 pin，安装和认证流程也由前置 skill 负责。如果缺少前置 skill，必须先停止报表数据访问并提出从官方来源安装；员工必须明确同意安装，或已经明确要求安装本 reporting skill 及其全部必需前置项，绝不静默安装。
-
-将本 reporting skill 安装到跨运行时 user skills 目录：
+先安装核心前置 skill：
 
 ```bash
 mkdir -p ~/.agents/skills
-git clone https://github.com/YinXiaoyu-1998/maijia-business-analyses-smedc.git ~/.agents/skills/maijia-business-analyses-smedc
+git clone https://github.com/YinXiaoyu-1998/smedc-mcp-skill.git /tmp/smedc-mcp-skill
+cp -R /tmp/smedc-mcp-skill/skills/smedc-mcp ~/.agents/skills/smedc-mcp
 ```
 
-## 范围
-
-支持范围：
-
-- 基于 Enterprise Hub 结构化数据生成经营诊断、周会报表和月会报表；
-- 使用 `business`、`dishes`、`dish_catalog` 三个 canonical dataset；
-- 在可选数据缺失或 coverage 不完整时生成诚实的 partial report；
-- 以有界内存流式聚合 launcher 管理的 canonical CSV 分区，并生成确定性的 HTML report artifact。
-
-明确不包含：
-
-- 美团浏览器导出或下载流程；
-- 直接 HTTP、token、密码、数据库或服务配置读取；
-- 以用户提供的本地 CSV/XLSX 作为报表源数据的兼容路径；
-- 月利润或利润率流程；
-- 真实客户数据、凭据或未发布 launcher 版本 pin。
-
-## Agent Workflow
-
-1. 使用前置 `enterprise-hub-mcp-skill` 完成 current-user launcher 安装、更新和登录；确认已认证的 Enterprise Hub MCP session 可用后再继续。
-2. 将 `list_structured_datasets` envelope 保存为 `registry_response.json`。
-3. 对 `business`、`dishes`、`dish_catalog` 依次调用 `describe_structured_dataset_coverage`，保存为 `coverage_business.json`、`coverage_dishes.json`、`coverage_dish_catalog.json`。
-4. 使用 coverage 中的准确企业名运行 `python3 scripts/build_query_plan.py`，生成 `diagnosis`、`weekly` 或 `monthly` manifest。
-5. 对每个 `extracts[]` 项调用 `download_structured_partitions`；planner 只合并重叠或相邻日期窗口。
-6. 只执行 `tool` 为 `query_structured_dataset` 的 job（当前只有 `dish_catalog`），并按 `nextCursor` 分页至 `null`。
-7. 依次运行 `python3 scripts/load_partition_extract.py`、`python3 scripts/assemble_query_bundle.py` 和对应 renderer runner：
-   - diagnosis：`python3 scripts/run_business_report.py`
-   - weekly：`python3 scripts/run_weekly_report.py`
-   - monthly：`python3 scripts/run_monthly_report.py`
-8. 保留 registry、coverage、manifest、聚合 query results、bundle、facts 和 HTML report。runner 在 `finally` 中清理 launcher extract；assembly 前失败时使用 loader 的 cleanup-only 模式。
-
-coverage 缺口或可选 job 失败应生成带 notice 的 partial report，不应补造事实或归因为服务故障。
-
-## 报表口径
-
-- 周趋势使用截至用户指定报告结束日的连续 16 个七天窗口；月趋势按自然月定位。缺失期间保留空位，不改变今年与去年同期的对齐关系。更新后须重新生成查询计划并取数：周收入趋势改为查询每日收入，只有原表周标签的旧查询包不能代替日期粒度输入。
-- 产品销量优先按关联菜品名称归并，缺失时使用销售菜品名称，并区分堂食、外卖。销售名称保留为搜索别名，两种万元销量继续使用对应门店范围的全渠道分母。
-- 档口匹配先查销售菜品名称，再用关联名称补救。同名多分类不能互相覆盖，无法唯一解析的冲突归入未匹配。
-- 经营诊断恢复 KPI、月趋势、门店组合、渠道与会员、时段热力图及机会池。门店在同规模组内比较；机会池是明确假设下的情景测算，不是承诺收益。
-- 本 skill 与 Enterprise Hub 强绑定。如果服务缺少必要字段或维度，暂缓对应能力并说明缺少的业务信息，不读取本地工作簿替代、不推测数值，也不为复刻效果擅自扩展服务。利润报表仍不在范围内。
-
-## 当前合同文件
-
-- `config/maijia.json` 定义 schema version `1`、canonical datasets、麦家门店分组、语义字段映射、报表模块和查询限制。
-- `tests/fixtures/registry_response.json` 是报表合同所需的完整 `list_structured_datasets` 响应 envelope，覆盖当前 `business`、`dishes`、`dish_catalog` 的全部 canonical fields。
-- `tests/fixtures/coverage_business.json`、`tests/fixtures/coverage_dishes.json`、`tests/fixtures/coverage_dish_catalog.json` 是合成的 partition 与 row-query coverage envelope。
-
-所有 fixture 中的公司、文档、导入批次和门店名称均为合成数据，只供后续 query-plan 与 bundle-validation 测试使用，不代表生产数据。
-
-## 数据访问边界
-
-使用本 skill 的 agent 应通过用户已认证的 Enterprise Hub MCP launcher 会话调用：
-
-- `list_structured_datasets`
-- `describe_structured_dataset_coverage`
-- `download_structured_partitions`
-- `query_structured_dataset`
-
-本仓库脚本校验保存下来的 MCP envelope，只流式读取已认证工具返回的 launcher 管理目录，并在本地生成聚合结果、事实表和报告。脚本不得自行认证、启动 launcher、直连 Enterprise Hub HTTP API，或读取服务内部数据。
-
-## Development
-
-运行时报表脚本只使用 Python standard library。测试套件仅为了校验 `agents/openai.yaml` 使用 PyYAML；安装 dev dependencies：
+安装 business-analysis skill 时，只复制它自己的 subtree：
 
 ```bash
-python3 -m pip install -r requirements-dev.txt
+mkdir -p ~/.agents/skills
+git clone https://github.com/YinXiaoyu-1998/smedc-companion-skills.git /tmp/smedc-companion-skills
+cp -R /tmp/smedc-companion-skills/skills/smedc-business-analysis ~/.agents/skills/smedc-business-analysis
 ```
 
-运行仓库检查：
+安装 delivery-ledger skill 时同样只复制它自己的 subtree：
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 scripts/build_query_plan.py --help
-python3 scripts/load_partition_extract.py --help
-python3 scripts/assemble_query_bundle.py --help
-python3 scripts/run_business_report.py --help
-python3 scripts/run_weekly_report.py --help
-python3 scripts/run_monthly_report.py --help
+mkdir -p ~/.agents/skills
+git clone https://github.com/YinXiaoyu-1998/smedc-companion-skills.git /tmp/smedc-companion-skills
+cp -R /tmp/smedc-companion-skills/skills/smedc-delivery-ledger ~/.agents/skills/smedc-delivery-ledger
 ```
 
-维护者可以将 registry fixture 与本地 Enterprise Hub 服务仓库的当前定义进行校验或同步；这不会为普通报表用户增加任何运行时依赖：
+business-analysis skill 需要已认证的 `smedc-mcp` session，使用 `smedc-mcp-launcher@0.5.0` 和 MCP entry `smedc`。如果缺少前置项，必须先停止报表数据访问，并在安装前请求员工明确授权。它不会自动安装其他 companion skill。
+
+delivery-ledger skill 使用同一个已认证的 `smedc-mcp` 前置项来查询台帐、准备 CSV 导出源数据、以及操作检疫证明照片。它不会自动安装其他 companion skill。
+
+## 开发
+
+运行仓库级检查：
 
 ```bash
-python3 scripts/registry_fixture_tool.py check --service-repo /path/to/SME_DATA_CENTER
-python3 scripts/registry_fixture_tool.py refresh --service-repo /path/to/SME_DATA_CENTER
-SME_DATA_CENTER_REPO=/path/to/SME_DATA_CENTER python3 -m unittest tests.test_contract_fixtures.ContractFixtureTests.test_registry_fixture_matches_authoritative_current_registries -v
+python3 scripts/validate_all_skills.py
+```
+
+直接运行单个 skill 检查：
+
+```bash
+python3 -m unittest discover -s skills/smedc-business-analysis/tests -v
+python3 /Users/xiaoyuyin/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/smedc-business-analysis
+python3 -m unittest discover -s skills/smedc-delivery-ledger/tests -v
+python3 /Users/xiaoyuyin/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/smedc-delivery-ledger
+```
+
+运行时脚本只使用 Python standard library。business-analysis 测试套件仅为了校验 `agents/openai.yaml` 使用 PyYAML；需要时从 business-analysis subtree 安装开发依赖：
+
+```bash
+python3 -m pip install -r skills/smedc-business-analysis/requirements-dev.txt
 ```

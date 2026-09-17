@@ -1,0 +1,17 @@
+{
+  "dataset": "business",
+  "accessMode": "partition_extract",
+  "enterprises": [
+    {
+      "enterpriseName": "示例企业",
+      "startDate": "2025-04-01",
+      "endDate": "2026-07-31",
+      "partitionCount": 974,
+      "totalRowCount": 24380,
+      "stores": [
+        { "storeId": "001", "storeName": "示例一店" },
+        { "storeId": "002", "storeName": "示例三店" }
+      ]
+    }
+  ]
+}

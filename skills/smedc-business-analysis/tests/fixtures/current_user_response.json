@@ -1,0 +1,9 @@
+{
+  "user": {
+    "displayName": "测试员工",
+    "email": "qa@example.invalid",
+    "role": "employee",
+    "clearance": 3,
+    "organizationName": "示例餐饮管理有限公司"
+  }
+}
