@@ -59,24 +59,26 @@ If `smedc-mcp` is not installed, do not begin ledger or photo access. Explain th
 
 ## CSV Export
 
-Use `scripts/export_ledger_csv.py` only when the user requests CSV output. Save one exact `query_structured_dataset` result object containing the service `presentation` key, or an array of paginated result objects in request order, as UTF-8 JSON and run:
+Use `scripts/export_ledger_csv.py` only when the user requests CSV output. Treat the raw query result as an internal transient input, not a user deliverable. Create an agent-owned file in a system temporary directory outside the requested output directory, install a finally/trap cleanup before writing it, and save one exact `query_structured_dataset` result object containing the service `presentation` key, or an array of paginated result objects in request order, as UTF-8 JSON. Run the exporter with `--delete-input`; it removes that input after both successful export and handled validation failure:
 
 ```bash
-python3 scripts/export_ledger_csv.py INPUT_JSON OUTPUT_CSV
+python3 scripts/export_ledger_csv.py TEMP_INPUT_JSON OUTPUT_CSV --delete-input
 ```
 
 Use `--overwrite` only when the user explicitly asks to replace an existing CSV:
 
 ```bash
-python3 scripts/export_ledger_csv.py INPUT_JSON OUTPUT_CSV --overwrite
+python3 scripts/export_ledger_csv.py TEMP_INPUT_JSON OUTPUT_CSV --overwrite --delete-input
 ```
+
+The surrounding finally/trap must remove the exact temporary input and its empty temporary directory if execution is interrupted or the exporter never starts. Do not place the input JSON in the CSV output directory or leave it anywhere after the run. Do not present, link, or mention the temporary query JSON. Present only the requested CSV file or files and a concise export/maintenance result. If the user explicitly requests the raw query response as a separate deliverable, write that requested artifact separately; it is not the exporter's temporary input.
 
 In any CSV mode, if the validated result contains zero rows, the exporter exits successfully, prints a compact JSON no-op summary, creates no CSV, and leaves any existing target byte-identical even when `--overwrite` was supplied.
 
-For common requests such as “生成通州店 2026 年 9 月的台账 CSV”, use the per-store monthly create-or-maintain mode. Query the bounded requested scope in `detail` mode and include internal `store_name` in each returned row in addition to the eleven profile fields. Save the exact result JSON, then run:
+For common requests such as “生成通州店 2026 年 9 月的台账 CSV”, use the per-store monthly create-or-maintain mode. Query the bounded requested scope in `detail` mode and include internal `store_name` in each returned row in addition to the eleven profile fields. Save the exact result JSON only at the temporary input path described above, then run:
 
 ```bash
-python3 scripts/export_ledger_csv.py INPUT_JSON --store-month-dir OUTPUT_DIR --month 2026-09
+python3 scripts/export_ledger_csv.py TEMP_INPUT_JSON --store-month-dir OUTPUT_DIR --month 2026-09 --delete-input
 ```
 
 This mode writes conventional files named `食品经营单位进货台帐_<门店名>_<YYYY-MM>.csv`. If a conventional valid CSV already exists, the exporter automatically maintains it: an incoming `收货单号` already present in that file skips the entire receipt, while a new `收货单号` appends all rows for that receipt without row-level deduplication. Do not ask for extra overwrite/update wording for this normal generate request. The internal `store_name` may not contain control characters or Windows-invalid filename characters `<>:"/\|?*`. If two distinct store names would resolve to the same filename after Unicode normalization and case-folding on a typical macOS filesystem, fail closed and ask the user to disambiguate the store scope before writing.

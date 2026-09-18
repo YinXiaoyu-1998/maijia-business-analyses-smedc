@@ -60,6 +60,13 @@ def complete_row(**overrides):
 
 
 class ExportLedgerCsvTests(unittest.TestCase):
+    def test_skill_keeps_query_json_internal_temporary_and_consumed(self):
+        skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("system temporary directory outside the requested output directory", skill_text)
+        self.assertIn("--delete-input", skill_text)
+        self.assertIn("Do not present, link, or mention the temporary query JSON", skill_text)
+        self.assertIn("Present only the requested CSV file or files", skill_text)
+
     def run_export(self, payload, output_path, *extra_args):
         input_path = output_path.with_suffix(".json")
         input_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -155,6 +162,52 @@ class ExportLedgerCsvTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(output_path.read_bytes(), original)
             self.assertEqual(json.loads(result.stdout)["files_written"], 0)
+
+    def test_delete_input_removes_agent_owned_json_after_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "ledger.csv"
+            input_path = output_path.with_suffix(".json")
+            result = self.run_export(page([complete_row()]), output_path, "--delete-input")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output_path.exists())
+            self.assertFalse(input_path.exists())
+
+    def test_delete_input_removes_agent_owned_json_after_validation_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "ledger.csv"
+            input_path = output_path.with_suffix(".json")
+            result = self.run_export(
+                page([complete_row(purchase_date="bad-date")]),
+                output_path,
+                "--delete-input",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(output_path.exists())
+            self.assertFalse(input_path.exists())
+
+    def test_delete_input_rejects_same_input_and_output_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shared_path = Path(tmp) / "ledger.json"
+            shared_path.write_text(
+                json.dumps(page([complete_row()]), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    str(shared_path),
+                    str(shared_path),
+                    "--overwrite",
+                    "--delete-input",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("input JSON and output CSV must be different files", result.stderr)
+            self.assertFalse(shared_path.exists())
 
     def run_store_month(self, payload, output_dir, month):
         input_path = output_dir / "ledger.json"

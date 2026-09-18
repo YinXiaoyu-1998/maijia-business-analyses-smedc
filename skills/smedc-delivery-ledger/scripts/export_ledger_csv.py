@@ -75,6 +75,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--overwrite", action="store_true", help="replace an existing output file")
     parser.add_argument("--store-month-dir", type=Path, help="create or maintain per-store monthly CSV files in this directory")
     parser.add_argument("--month", help="requested month for --store-month-dir, formatted YYYY-MM")
+    parser.add_argument(
+        "--delete-input",
+        action="store_true",
+        help="delete the agent-created input JSON after this run, including validation failures",
+    )
     return parser.parse_args(argv)
 
 
@@ -355,42 +360,62 @@ def write_csv_atomic(output_path: Path, rows: list[list[str]], overwrite: bool) 
                 pass
 
 
+def run_export(args: argparse.Namespace) -> None:
+    if (
+        args.delete_input
+        and args.output_csv is not None
+        and args.input_json.resolve() == args.output_csv.resolve()
+    ):
+        raise ExportError("input JSON and output CSV must be different files")
+    if args.store_month_dir:
+        if args.output_csv is not None:
+            raise ExportError("output_csv is not used with --store-month-dir")
+        if args.overwrite:
+            raise ExportError("--overwrite is not used with --store-month-dir")
+        if not args.month:
+            raise ExportError("--month is required with --store-month-dir")
+    elif args.output_csv is None:
+        raise ExportError("output_csv is required unless --store-month-dir is used")
+    elif args.month:
+        raise ExportError("--month is only used with --store-month-dir")
+
+    payload = load_payload(args.input_json)
+    pages = as_pages(payload)
+    if args.store_month_dir:
+        rows = validate_pages(pages, require_store_name=True)
+        plans, summary = build_store_month_plans(rows, args.store_month_dir, args.month)
+        write_store_month_csvs(plans)
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+    else:
+        rows = validate_pages(pages)
+        if not rows:
+            print(json.dumps({
+                "files_written": 0,
+                "mode": "single-file",
+                "rows_exported": 0,
+            }, ensure_ascii=False, sort_keys=True))
+            return
+        write_csv_atomic(args.output_csv, [row.cells for row in rows], args.overwrite)
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+    exit_code = 0
     try:
-        if args.store_month_dir:
-            if args.output_csv is not None:
-                raise ExportError("output_csv is not used with --store-month-dir")
-            if args.overwrite:
-                raise ExportError("--overwrite is not used with --store-month-dir")
-            if not args.month:
-                raise ExportError("--month is required with --store-month-dir")
-        elif args.output_csv is None:
-            raise ExportError("output_csv is required unless --store-month-dir is used")
-        elif args.month:
-            raise ExportError("--month is only used with --store-month-dir")
-
-        payload = load_payload(args.input_json)
-        pages = as_pages(payload)
-        if args.store_month_dir:
-            rows = validate_pages(pages, require_store_name=True)
-            plans, summary = build_store_month_plans(rows, args.store_month_dir, args.month)
-            write_store_month_csvs(plans)
-            print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
-        else:
-            rows = validate_pages(pages)
-            if not rows:
-                print(json.dumps({
-                    "files_written": 0,
-                    "mode": "single-file",
-                    "rows_exported": 0,
-                }, ensure_ascii=False, sort_keys=True))
-                return 0
-            write_csv_atomic(args.output_csv, [row.cells for row in rows], args.overwrite)
+        run_export(args)
     except ExportError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 1
-    return 0
+        exit_code = 1
+    finally:
+        if args.delete_input:
+            try:
+                args.input_json.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"error: unable to delete input JSON: {exc}", file=sys.stderr)
+                exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":
