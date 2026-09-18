@@ -3,9 +3,10 @@
     "dataset": "delivery_ledger",
     "mode": "detail",
     "presentation": {
-      "id": "food-purchase-ledger-cn-v1",
+      "id": "food-purchase-ledger-cn-v2",
       "title": "食品经营单位进货台帐",
       "columns": [
+        { "canonicalName": "receipt_id", "displayName": "收货单号" },
         { "canonicalName": "item_name", "displayName": "食品名称" },
         { "canonicalName": "specification", "displayName": "规格" },
         { "canonicalName": "purchase_quantity", "displayName": "进货数量" },
@@ -20,6 +21,7 @@
     },
     "rows": [
       {
+        "receipt_id": "SH-20260915-001",
         "item_name": "牛奶",
         "specification": "250ml",
         "purchase_quantity": "12.50",
@@ -32,6 +34,7 @@
         "purchase_date": "2026-09-15"
       },
       {
+        "receipt_id": "SH-20260916-001",
         "item_name": "苹果,红富士",
         "specification": "箱装 \"特级\"",
         "purchase_quantity": "3",
@@ -50,9 +53,10 @@
     "dataset": "delivery_ledger",
     "mode": "detail",
     "presentation": {
-      "id": "food-purchase-ledger-cn-v1",
+      "id": "food-purchase-ledger-cn-v2",
       "title": "食品经营单位进货台帐",
       "columns": [
+        { "canonicalName": "receipt_id", "displayName": "收货单号" },
         { "canonicalName": "item_name", "displayName": "食品名称" },
         { "canonicalName": "specification", "displayName": "规格" },
         { "canonicalName": "purchase_quantity", "displayName": "进货数量" },
@@ -67,6 +71,7 @@
     },
     "rows": [
       {
+        "receipt_id": "SH-20260917-001",
         "item_name": "=配方",
         "specification": "+规格",
         "purchase_quantity": "-1",

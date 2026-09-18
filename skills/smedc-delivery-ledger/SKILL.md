@@ -15,18 +15,19 @@ If `smedc-mcp` is not installed, do not begin ledger or photo access. Explain th
 
 - Do not perform business analysis, dashboarding, OCR, photo classification, authenticity judgment, PDF/XLSX output, or sibling skill runtime imports.
 - Use only the user's authenticated SMEDC MCP session. Do not use direct HTTP, service databases, service configuration, internal storage, passwords, or tokens.
-- Present `entry_id`, `receipt_id`, `store_name`, and `source_document_id` only if the user separately asks for operational provenance. Hide them from the standard ledger table.
+- Present `收货单号` / `receipt_id` in normal ledger tables and CSV output. Present `entry_id`, `store_name`, and `source_document_id` only if the user separately asks for operational provenance, except that `store_name` is required as internal routing input for per-store monthly CSV maintenance.
 - Never add quarantine-certificate photo metadata or URLs to CSV output.
 - Never OCR, classify, modify, or authenticate certificate images.
 
 ## Ledger Workflow
 
 1. Confirm the `smedc-mcp` prerequisite and authenticated `smedc` MCP session.
-2. Call `list_structured_datasets` and confirm dataset `delivery_ledger` exposes profile `food-purchase-ledger-cn-v1`.
-3. Compare the service profile with local `config/food-purchase-ledger-cn-v1.json`. The `id`, `title`, column count, canonical names, display names, and order must match exactly. If they differ, fail closed and ask the user to update the Skill or launcher before continuing.
+2. Call `list_structured_datasets` and confirm dataset `delivery_ledger` exposes profile `food-purchase-ledger-cn-v2`.
+3. Compare the service profile with local `config/food-purchase-ledger-cn-v2.json`. The `id`, `title`, column count, canonical names, display names, and order must match exactly. If they differ, fail closed and ask the user to update the Skill or launcher before continuing.
 4. Query `query_structured_dataset` in `detail` mode with these canonical fields in this exact order:
 
    ```text
+   receipt_id
    item_name
    specification
    purchase_quantity
@@ -43,6 +44,7 @@ If `smedc-mcp` is not installed, do not begin ledger or photo access. Explain th
 6. Present the table title `食品经营单位进货台帐` and Chinese display names verbatim from the service profile:
 
    ```text
+   收货单号
    食品名称
    规格
    进货数量
@@ -69,7 +71,15 @@ Use `--overwrite` only when the user explicitly asks to replace an existing CSV:
 python3 scripts/export_ledger_csv.py INPUT_JSON OUTPUT_CSV --overwrite
 ```
 
-The exporter writes UTF-8 with BOM, uses the ten Chinese headers in statutory order, validates dataset/mode/presentation/rows before writing, quotes with Python standard-library `csv.writer`, prefixes spreadsheet formula-leading cells with a single quote, and atomically replaces output through a temporary file.
+For common requests such as “生成通州店 2026 年 9 月的台账 CSV”, use the per-store monthly create-or-maintain mode. Query the bounded requested scope in `detail` mode and include internal `store_name` in each returned row in addition to the eleven profile fields. Save the exact result JSON, then run:
+
+```bash
+python3 scripts/export_ledger_csv.py INPUT_JSON --store-month-dir OUTPUT_DIR --month 2026-09
+```
+
+This mode writes conventional files named `{store_name}-{YYYY-MM}-食品经营单位进货台帐.csv`. If a conventional valid CSV already exists, the exporter automatically maintains it: an incoming `收货单号` already present in that file skips the entire receipt, while a new `收货单号` appends all rows for that receipt without row-level deduplication. Do not ask for extra overwrite/update wording for this normal generate request. Empty results create nothing and leave existing files untouched.
+
+The exporter writes UTF-8 with BOM, uses the eleven Chinese headers in statutory order, validates dataset/mode/presentation/rows before writing, quotes with Python standard-library `csv.writer`, prefixes spreadsheet formula-leading cells with a single quote, validates requested month/store filenames/affected existing CSV files for per-store maintenance, and atomically replaces output through a temporary file. The per-store monthly mode emits a compact JSON run summary on stdout.
 
 ## Quarantine-Certificate Photos
 

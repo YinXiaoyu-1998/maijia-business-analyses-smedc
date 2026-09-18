@@ -166,7 +166,7 @@ class TenantNeutralContractTests(unittest.TestCase):
         self.assertIn("Never install or import `smedc-delivery-ledger` automatically", skill_text)
 
     def test_no_runtime_import_or_dependency_on_future_delivery_ledger_sibling(self) -> None:
-        forbidden = ("smedc-delivery-ledger", "delivery_ledger", "food-purchase-ledger-cn-v1")
+        forbidden = ("smedc-delivery-ledger", "delivery_ledger", "food-purchase-ledger-cn-v2")
         for path in sorted((ROOT / "scripts").glob("*.py")):
             text = path.read_text(encoding="utf-8")
             for pattern in forbidden:
