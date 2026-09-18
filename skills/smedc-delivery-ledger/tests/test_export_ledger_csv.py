@@ -126,6 +126,16 @@ class ExportLedgerCsvTests(unittest.TestCase):
         self.assertEqual(rows[1][5:7], ["", ""])
         self.assertEqual(rows[1][8:10], ["", ""])
 
+    def test_string_null_sentinels_in_nullable_fields_become_empty_cells(self):
+        rows = self.assert_export_ok(page([complete_row(
+            production_date_or_batch="null",
+            shelf_life="null",
+            supplier_unit_address="null",
+            supplier_contact_phone="null",
+        )]))
+        self.assertEqual(rows[1][5:7], ["", ""])
+        self.assertEqual(rows[1][8:10], ["", ""])
+
     def test_decimals_phones_formula_prefixes_and_csv_quoting_are_preserved(self):
         rows = self.assert_export_ok(page([complete_row(
             item_name="=SUM(A1:A2)",

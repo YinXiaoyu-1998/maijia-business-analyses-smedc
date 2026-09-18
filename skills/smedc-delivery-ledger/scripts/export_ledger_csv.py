@@ -157,6 +157,8 @@ def normalize_cell(row: dict[str, Any], field: str, page_index: int, row_index: 
         if field in NULLABLE_FIELDS:
             return ""
         raise ExportError(f"row {page_index}.{row_index} field {field} cannot be null")
+    if field in NULLABLE_FIELDS and value == "null":
+        return ""
     cell = scalar_to_string(value, field, page_index, row_index)
 
     if field == "purchase_date":
