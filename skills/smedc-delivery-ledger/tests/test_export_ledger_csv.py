@@ -157,16 +157,20 @@ class ExportLedgerCsvTests(unittest.TestCase):
             self.assertEqual(summary["mode"], "store-month")
             self.assertEqual(summary["files_written"], 2)
             self.assertEqual(summary["rows_appended"], 2)
-            self.assertEqual(self.read_csv(output_dir / "通州店-2026-09-食品经营单位进货台帐.csv"), [
+            tongzhou_path = output_dir / "食品经营单位进货台帐_通州店_2026-09.csv"
+            self.assertTrue(tongzhou_path.exists())
+            self.assertEqual(self.read_csv(tongzhou_path), [
                 HEADERS,
                 ["TZ-20260901-001", "牛奶", "250ml", "12.50", "99.90", "2026-09-01", "180天", "上海供应商A", "上海市黄浦区", "'+8613800138000", "2026-09-15"],
             ])
-            self.assertEqual(self.read_csv(output_dir / "海淀店-2026-09-食品经营单位进货台帐.csv")[1][0:2], ["HD-20260902-001", "苹果"])
+            haidian_path = output_dir / "食品经营单位进货台帐_海淀店_2026-09.csv"
+            self.assertTrue(haidian_path.exists())
+            self.assertEqual(self.read_csv(haidian_path)[1][0:2], ["HD-20260902-001", "苹果"])
 
     def test_store_month_mode_maintains_existing_file_by_receipt_not_row_deduping(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
-            output_path = output_dir / "通州店-2026-09-食品经营单位进货台帐.csv"
+            output_path = output_dir / "食品经营单位进货台帐_通州店_2026-09.csv"
             with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(HEADERS)
@@ -192,7 +196,7 @@ class ExportLedgerCsvTests(unittest.TestCase):
     def test_store_month_mode_empty_result_writes_nothing_and_leaves_existing_file_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
-            output_path = output_dir / "通州店-2026-09-食品经营单位进货台帐.csv"
+            output_path = output_dir / "食品经营单位进货台帐_通州店_2026-09.csv"
             output_path.write_text("sentinel", encoding="utf-8")
             result = self.run_store_month(page([]), output_dir, "2026-09")
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -202,7 +206,7 @@ class ExportLedgerCsvTests(unittest.TestCase):
     def test_store_month_mode_validates_all_inputs_before_touching_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
-            output_path = output_dir / "通州店-2026-09-食品经营单位进货台帐.csv"
+            output_path = output_dir / "食品经营单位进货台帐_通州店_2026-09.csv"
             output_path.write_text("sentinel", encoding="utf-8")
             payload = page([
                 complete_row(store_name="通州店", receipt_id="TZ-GOOD", purchase_date="2026-09-03"),
@@ -212,12 +216,12 @@ class ExportLedgerCsvTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("requested month", result.stderr)
             self.assertEqual(output_path.read_text(encoding="utf-8"), "sentinel")
-            self.assertFalse((output_dir / "海淀店-2026-09-食品经营单位进货台帐.csv").exists())
+            self.assertFalse((output_dir / "食品经营单位进货台帐_海淀店_2026-09.csv").exists())
 
     def test_store_month_mode_rejects_invalid_existing_file_before_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
-            bad_path = output_dir / "通州店-2026-09-食品经营单位进货台帐.csv"
+            bad_path = output_dir / "食品经营单位进货台帐_通州店_2026-09.csv"
             with bad_path.open("w", encoding="utf-8-sig", newline="") as handle:
                 csv.writer(handle).writerows([["wrong"], ["TZ-OLD"]])
             payload = page([complete_row(store_name="通州店", receipt_id="TZ-NEW", purchase_date="2026-09-03")])
@@ -225,6 +229,18 @@ class ExportLedgerCsvTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("existing CSV header", result.stderr)
             self.assertEqual(self.read_csv(bad_path), [["wrong"], ["TZ-OLD"]])
+
+    def test_store_month_mode_rejects_store_names_that_collide_after_filesystem_normalization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            payload = page([
+                complete_row(store_name="Alpha", receipt_id="ALPHA-001", purchase_date="2026-09-03"),
+                complete_row(store_name="alpha", receipt_id="LOWER-001", purchase_date="2026-09-04"),
+            ])
+            result = self.run_store_month(payload, output_dir, "2026-09")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("filename collision", result.stderr)
+            self.assertEqual(list(output_dir.glob("*.csv")), [])
 
     def test_rejects_invalid_dates(self):
         self.assert_export_fails(page([complete_row(purchase_date="2026-9-15")]), "purchase_date")

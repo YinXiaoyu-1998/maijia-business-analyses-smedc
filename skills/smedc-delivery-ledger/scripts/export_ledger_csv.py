@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -235,7 +236,11 @@ def validate_existing_rows(path: Path, month: str) -> tuple[list[list[str]], set
 
 
 def monthly_filename(store_name: str, month: str) -> str:
-    return f"{store_name}-{month}-{EXPECTED_PROFILE['title']}.csv"
+    return f"{EXPECTED_PROFILE['title']}_{store_name}_{month}.csv"
+
+
+def normalized_target_key(path: Path) -> str:
+    return unicodedata.normalize("NFC", path.name).casefold()
 
 
 def build_store_month_plans(rows: list[NormalizedRow], output_dir: Path, month: str) -> tuple[dict[Path, list[list[str]]], dict[str, Any]]:
@@ -254,6 +259,7 @@ def build_store_month_plans(rows: list[NormalizedRow], output_dir: Path, month: 
 
     receipt_store: dict[str, str] = {}
     grouped: dict[Path, dict[str, list[NormalizedRow]]] = {}
+    normalized_targets: dict[str, tuple[str, Path]] = {}
     for row in rows:
         if row.store_name is None:
             raise ExportError(f"row {row.page_index}.{row.row_index} is missing store_name")
@@ -265,6 +271,13 @@ def build_store_month_plans(rows: list[NormalizedRow], output_dir: Path, month: 
         target = output_dir / monthly_filename(row.store_name, month)
         if target.name != monthly_filename(row.store_name, month):
             raise ExportError(f"invalid filename for store {row.store_name}")
+        normalized_key = normalized_target_key(target)
+        existing_target = normalized_targets.setdefault(normalized_key, (row.store_name, target))
+        if existing_target[0] != row.store_name:
+            raise ExportError(
+                "filename collision after normalization: "
+                f"{existing_target[0]} -> {existing_target[1].name}, {row.store_name} -> {target.name}"
+            )
         grouped.setdefault(target, {}).setdefault(row.receipt_id, []).append(row)
 
     plans: dict[Path, list[list[str]]] = {}
