@@ -7,7 +7,7 @@ This repository is organized as independently installable sibling skills under `
 ## Skills
 
 - `skills/smedc-business-analysis/`: tenant-neutral operating diagnosis, weekly meeting, and monthly meeting reports from SMEDC structured business datasets.
-- `skills/smedc-delivery-ledger/`: statutory delivery-ledger lookup and CSV export, plus receipt-linked quarantine-certificate photo guidance.
+- `skills/smedc-delivery-ledger/`: statutory receipt-aware delivery-ledger lookup, CSV export, per-store monthly CSV maintenance, plus receipt-linked quarantine-certificate photo guidance.
 
 ## Installation
 
@@ -37,7 +37,7 @@ cp -R /tmp/smedc-companion-skills/skills/smedc-delivery-ledger ~/.agents/skills/
 
 The business-analysis skill requires an authenticated `smedc-mcp` session using `smedc-mcp-launcher@0.5.0` and MCP entry `smedc`. If that prerequisite is missing, the skill must stop before report data access and ask for explicit authorization before installing it. It never installs another companion skill automatically.
 
-The delivery-ledger skill uses the same authenticated `smedc-mcp` prerequisite for ledger queries, CSV export source data, and quarantine-certificate photo operations. It never installs another companion skill automatically.
+The delivery-ledger skill uses the same authenticated `smedc-mcp` prerequisite for ledger queries, receipt-aware CSV export and per-store monthly maintenance source data, and quarantine-certificate photo operations. It never installs another companion skill automatically.
 
 ## Development
 

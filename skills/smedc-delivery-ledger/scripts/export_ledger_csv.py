@@ -11,12 +11,13 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE_PATH = ROOT / "config" / "food-purchase-ledger-cn-v1.json"
+PROFILE_PATH = ROOT / "config" / "food-purchase-ledger-cn-v2.json"
 DATASET = "delivery_ledger"
 MODE = "detail"
 NULLABLE_FIELDS = {
@@ -27,6 +28,9 @@ NULLABLE_FIELDS = {
 }
 FORMULA_PREFIXES = ("=", "+", "-", "@")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+INVALID_STORE_NAME_RE = re.compile(r'[\x00-\x1f<>:"/\\|?*]')
+STORE_NAME_FIELD = "store_name"
 
 
 class ExportError(ValueError):
@@ -44,13 +48,33 @@ def load_expected_profile() -> dict[str, Any]:
 EXPECTED_PROFILE = load_expected_profile()
 CANONICAL_FIELDS = [column["canonicalName"] for column in EXPECTED_PROFILE["columns"]]
 HEADERS = [column["displayName"] for column in EXPECTED_PROFILE["columns"]]
+RECEIPT_INDEX = CANONICAL_FIELDS.index("receipt_id")
+PURCHASE_DATE_INDEX = CANONICAL_FIELDS.index("purchase_date")
+
+
+class NormalizedRow:
+    def __init__(self, cells: list[str], store_name: str | None, page_index: int, row_index: int) -> None:
+        self.cells = cells
+        self.store_name = store_name
+        self.page_index = page_index
+        self.row_index = row_index
+
+    @property
+    def receipt_id(self) -> str:
+        return self.cells[RECEIPT_INDEX]
+
+    @property
+    def purchase_date(self) -> str:
+        return self.cells[PURCHASE_DATE_INDEX]
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export SMEDC delivery ledger detail results to CSV.")
     parser.add_argument("input_json", type=Path)
-    parser.add_argument("output_csv", type=Path)
+    parser.add_argument("output_csv", type=Path, nargs="?")
     parser.add_argument("--overwrite", action="store_true", help="replace an existing output file")
+    parser.add_argument("--store-month-dir", type=Path, help="create or maintain per-store monthly CSV files in this directory")
+    parser.add_argument("--month", help="requested month for --store-month-dir, formatted YYYY-MM")
     return parser.parse_args(argv)
 
 
@@ -67,9 +91,9 @@ def load_payload(path: Path) -> Any:
 def as_pages(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         return [payload]
-    if isinstance(payload, list) and payload and all(isinstance(page, dict) for page in payload):
+    if isinstance(payload, list) and all(isinstance(page, dict) for page in payload):
         return payload
-    raise ExportError("input must be one page object or a non-empty array of page objects")
+    raise ExportError("input must be one page object or an array of page objects")
 
 
 def page_fingerprint(page: dict[str, Any]) -> str:
@@ -98,6 +122,25 @@ def validate_date(value: str, field: str) -> None:
         raise ExportError(f"{field} must be a valid YYYY-MM-DD date") from exc
 
 
+def validate_month(value: str) -> None:
+    if not MONTH_RE.fullmatch(value):
+        raise ExportError("month must be YYYY-MM")
+    try:
+        dt.date.fromisoformat(f"{value}-01")
+    except ValueError as exc:
+        raise ExportError("month must be a valid YYYY-MM month") from exc
+
+
+def scalar_to_string(value: Any, field: str, page_index: int, row_index: int) -> str:
+    if value is None:
+        raise ExportError(f"row {page_index}.{row_index} field {field} cannot be null")
+    if isinstance(value, (list, dict)):
+        raise ExportError(f"row {page_index}.{row_index} field {field} must be scalar")
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def normalize_cell(row: dict[str, Any], field: str, page_index: int, row_index: int) -> str:
     if field not in row:
         if field in NULLABLE_FIELDS:
@@ -109,23 +152,31 @@ def normalize_cell(row: dict[str, Any], field: str, page_index: int, row_index: 
         if field in NULLABLE_FIELDS:
             return ""
         raise ExportError(f"row {page_index}.{row_index} field {field} cannot be null")
-    if isinstance(value, (list, dict)):
-        raise ExportError(f"row {page_index}.{row_index} field {field} must be scalar")
-    if isinstance(value, bool):
-        cell = "true" if value else "false"
-    else:
-        cell = str(value)
+    cell = scalar_to_string(value, field, page_index, row_index)
 
     if field == "purchase_date":
         validate_date(cell, field)
+    if field == "receipt_id" and not cell:
+        raise ExportError(f"row {page_index}.{row_index} field receipt_id cannot be empty")
 
     if cell.startswith(FORMULA_PREFIXES):
         return "'" + cell
     return cell
 
 
-def validate_pages(pages: list[dict[str, Any]]) -> list[list[str]]:
-    rows_out: list[list[str]] = []
+def normalize_store_name(row: dict[str, Any], page_index: int, row_index: int) -> str:
+    if STORE_NAME_FIELD not in row:
+        raise ExportError(f"row {page_index}.{row_index} is missing required field {STORE_NAME_FIELD}")
+    store_name = scalar_to_string(row[STORE_NAME_FIELD], STORE_NAME_FIELD, page_index, row_index)
+    if not store_name or store_name != store_name.strip():
+        raise ExportError(f"row {page_index}.{row_index} field {STORE_NAME_FIELD} must be non-empty without surrounding whitespace")
+    if INVALID_STORE_NAME_RE.search(store_name):
+        raise ExportError(f"row {page_index}.{row_index} field {STORE_NAME_FIELD} contains characters invalid for filenames")
+    return store_name
+
+
+def validate_pages(pages: list[dict[str, Any]], *, require_store_name: bool = False) -> list[NormalizedRow]:
+    rows_out: list[NormalizedRow] = []
     seen_pages: set[str] = set()
 
     for page_index, page in enumerate(pages, start=1):
@@ -147,12 +198,129 @@ def validate_pages(pages: list[dict[str, Any]]) -> list[list[str]]:
         for row_index, row in enumerate(rows, start=1):
             if not isinstance(row, dict):
                 raise ExportError(f"row {page_index}.{row_index} must be an object")
-            rows_out.append([
+            cells = [
                 normalize_cell(row, field, page_index, row_index)
                 for field in CANONICAL_FIELDS
-            ])
+            ]
+            store_name = normalize_store_name(row, page_index, row_index) if require_store_name else None
+            rows_out.append(NormalizedRow(cells, store_name, page_index, row_index))
 
     return rows_out
+
+
+def validate_existing_rows(path: Path, month: str) -> tuple[list[list[str]], set[str]]:
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.reader(handle))
+    except OSError as exc:
+        raise ExportError(f"unable to read existing CSV {path}: {exc}") from exc
+
+    if not rows or rows[0] != HEADERS:
+        raise ExportError(f"existing CSV header does not match {EXPECTED_PROFILE['id']}: {path}")
+
+    existing_receipts: set[str] = set()
+    body = rows[1:]
+    for row_number, row in enumerate(body, start=2):
+        if len(row) != len(HEADERS):
+            raise ExportError(f"existing CSV row {row_number} has {len(row)} columns, expected {len(HEADERS)}: {path}")
+        receipt_id = row[RECEIPT_INDEX]
+        if not receipt_id:
+            raise ExportError(f"existing CSV row {row_number} receipt_id cannot be empty: {path}")
+        purchase_date = row[PURCHASE_DATE_INDEX]
+        validate_date(purchase_date, f"existing CSV row {row_number} purchase_date")
+        if not purchase_date.startswith(f"{month}-"):
+            raise ExportError(f"existing CSV row {row_number} is outside requested month {month}: {path}")
+        existing_receipts.add(receipt_id)
+
+    return body, existing_receipts
+
+
+def monthly_filename(store_name: str, month: str) -> str:
+    return f"{EXPECTED_PROFILE['title']}_{store_name}_{month}.csv"
+
+
+def normalized_target_key(path: Path) -> str:
+    return unicodedata.normalize("NFC", path.name).casefold()
+
+
+def build_store_month_plans(rows: list[NormalizedRow], output_dir: Path, month: str) -> tuple[dict[Path, list[list[str]]], dict[str, Any]]:
+    validate_month(month)
+    if not output_dir.exists() or not output_dir.is_dir():
+        raise ExportError(f"store-month output directory does not exist: {output_dir}")
+    if not rows:
+        return {}, {
+            "mode": "store-month",
+            "month": month,
+            "files_written": 0,
+            "receipts_appended": 0,
+            "receipts_skipped": 0,
+            "rows_appended": 0,
+        }
+
+    receipt_store: dict[str, str] = {}
+    grouped: dict[Path, dict[str, list[NormalizedRow]]] = {}
+    normalized_targets: dict[str, tuple[str, Path]] = {}
+    for row in rows:
+        if row.store_name is None:
+            raise ExportError(f"row {row.page_index}.{row.row_index} is missing store_name")
+        if not row.purchase_date.startswith(f"{month}-"):
+            raise ExportError(f"row {row.page_index}.{row.row_index} purchase_date is outside requested month {month}")
+        prior_store = receipt_store.setdefault(row.receipt_id, row.store_name)
+        if prior_store != row.store_name:
+            raise ExportError(f"receipt_id {row.receipt_id} appears under multiple stores")
+        target = output_dir / monthly_filename(row.store_name, month)
+        if target.name != monthly_filename(row.store_name, month):
+            raise ExportError(f"invalid filename for store {row.store_name}")
+        normalized_key = normalized_target_key(target)
+        existing_target = normalized_targets.setdefault(normalized_key, (row.store_name, target))
+        if existing_target[0] != row.store_name:
+            raise ExportError(
+                "filename collision after normalization: "
+                f"{existing_target[0]} -> {existing_target[1].name}, {row.store_name} -> {target.name}"
+            )
+        grouped.setdefault(target, {}).setdefault(row.receipt_id, []).append(row)
+
+    plans: dict[Path, list[list[str]]] = {}
+    receipts_appended = 0
+    receipts_skipped = 0
+    rows_appended = 0
+
+    for target, receipt_groups in grouped.items():
+        if target.exists():
+            existing_rows, existing_receipts = validate_existing_rows(target, month)
+        else:
+            existing_rows = []
+            existing_receipts = set()
+
+        output_rows = list(existing_rows)
+        file_rows_appended = 0
+        for receipt_id, receipt_rows in receipt_groups.items():
+            if receipt_id in existing_receipts:
+                receipts_skipped += 1
+                continue
+            rows_to_append = [row.cells for row in receipt_rows]
+            output_rows.extend(rows_to_append)
+            receipts_appended += 1
+            file_rows_appended += len(rows_to_append)
+            rows_appended += len(rows_to_append)
+
+        if file_rows_appended:
+            plans[target] = output_rows
+
+    summary = {
+        "mode": "store-month",
+        "month": month,
+        "files_written": len(plans),
+        "receipts_appended": receipts_appended,
+        "receipts_skipped": receipts_skipped,
+        "rows_appended": rows_appended,
+    }
+    return plans, summary
+
+
+def write_store_month_csvs(plans: dict[Path, list[list[str]]]) -> None:
+    for target, rows in plans.items():
+        write_csv_atomic(target, rows, overwrite=True)
 
 
 def write_csv_atomic(output_path: Path, rows: list[list[str]], overwrite: bool) -> None:
@@ -190,9 +358,35 @@ def write_csv_atomic(output_path: Path, rows: list[list[str]], overwrite: bool) 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     try:
+        if args.store_month_dir:
+            if args.output_csv is not None:
+                raise ExportError("output_csv is not used with --store-month-dir")
+            if args.overwrite:
+                raise ExportError("--overwrite is not used with --store-month-dir")
+            if not args.month:
+                raise ExportError("--month is required with --store-month-dir")
+        elif args.output_csv is None:
+            raise ExportError("output_csv is required unless --store-month-dir is used")
+        elif args.month:
+            raise ExportError("--month is only used with --store-month-dir")
+
         payload = load_payload(args.input_json)
-        rows = validate_pages(as_pages(payload))
-        write_csv_atomic(args.output_csv, rows, args.overwrite)
+        pages = as_pages(payload)
+        if args.store_month_dir:
+            rows = validate_pages(pages, require_store_name=True)
+            plans, summary = build_store_month_plans(rows, args.store_month_dir, args.month)
+            write_store_month_csvs(plans)
+            print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+        else:
+            rows = validate_pages(pages)
+            if not rows:
+                print(json.dumps({
+                    "files_written": 0,
+                    "mode": "single-file",
+                    "rows_exported": 0,
+                }, ensure_ascii=False, sort_keys=True))
+                return 0
+            write_csv_atomic(args.output_csv, [row.cells for row in rows], args.overwrite)
     except ExportError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

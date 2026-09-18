@@ -7,7 +7,7 @@
 ## Skills
 
 - `skills/smedc-business-analysis/`：基于 SMEDC 结构化经营数据，生成租户中立的经营诊断、周会报表和月会报表。
-- `skills/smedc-delivery-ledger/`：进货台帐查询与法定 CSV 导出，以及按收货单号关联检疫证明照片的使用指引。
+- `skills/smedc-delivery-ledger/`：带收货单号的进货台帐查询、法定 CSV 导出、按门店/月维护 CSV，以及按收货单号关联检疫证明照片的使用指引。
 
 ## 安装
 
@@ -37,7 +37,7 @@ cp -R /tmp/smedc-companion-skills/skills/smedc-delivery-ledger ~/.agents/skills/
 
 business-analysis skill 需要已认证的 `smedc-mcp` session，使用 `smedc-mcp-launcher@0.5.0` 和 MCP entry `smedc`。如果缺少前置项，必须先停止报表数据访问，并在安装前请求员工明确授权。它不会自动安装其他 companion skill。
 
-delivery-ledger skill 使用同一个已认证的 `smedc-mcp` 前置项来查询台帐、准备 CSV 导出源数据、以及操作检疫证明照片。它不会自动安装其他 companion skill。
+delivery-ledger skill 使用同一个已认证的 `smedc-mcp` 前置项来查询台帐、准备带收货单号的 CSV 导出和按门店/月维护源数据、以及操作检疫证明照片。它不会自动安装其他 companion skill。
 
 ## 开发
 
