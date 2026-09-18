@@ -134,6 +134,28 @@ class ExportLedgerCsvTests(unittest.TestCase):
         self.assertEqual(rows[1][9], "'+8613800138000")
         self.assertEqual(rows[1][7], '供应商 "甲"')
 
+    def test_single_file_mode_empty_result_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "ledger.csv"
+            result = self.run_export(page([]), output_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(output_path.exists())
+            self.assertEqual(json.loads(result.stdout), {
+                "files_written": 0,
+                "mode": "single-file",
+                "rows_exported": 0,
+            })
+
+    def test_single_file_mode_empty_result_with_overwrite_leaves_existing_file_byte_identical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "ledger.csv"
+            original = b"sentinel existing csv bytes"
+            output_path.write_bytes(original)
+            result = self.run_export(page([]), output_path, "--overwrite")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output_path.read_bytes(), original)
+            self.assertEqual(json.loads(result.stdout)["files_written"], 0)
+
     def run_store_month(self, payload, output_dir, month):
         input_path = output_dir / "ledger.json"
         input_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -241,6 +263,19 @@ class ExportLedgerCsvTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("filename collision", result.stderr)
             self.assertEqual(list(output_dir.glob("*.csv")), [])
+
+    def test_store_month_mode_rejects_windows_invalid_store_filename_characters_before_writing(self):
+        for character in '<>"|?*':
+            with self.subTest(character=character):
+                with tempfile.TemporaryDirectory() as tmp:
+                    output_dir = Path(tmp)
+                    payload = page([
+                        complete_row(store_name=f"A{character}B", receipt_id="BAD-STORE", purchase_date="2026-09-03"),
+                    ])
+                    result = self.run_store_month(payload, output_dir, "2026-09")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("store_name", result.stderr)
+                    self.assertEqual(list(output_dir.glob("*.csv")), [])
 
     def test_rejects_invalid_dates(self):
         self.assert_export_fails(page([complete_row(purchase_date="2026-9-15")]), "purchase_date")

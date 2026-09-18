@@ -29,7 +29,7 @@ NULLABLE_FIELDS = {
 FORMULA_PREFIXES = ("=", "+", "-", "@")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
-INVALID_STORE_NAME_RE = re.compile(r"[\x00-\x1f/\\:]")
+INVALID_STORE_NAME_RE = re.compile(r'[\x00-\x1f<>:"/\\|?*]')
 STORE_NAME_FIELD = "store_name"
 
 
@@ -379,6 +379,13 @@ def main(argv: list[str]) -> int:
             print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
         else:
             rows = validate_pages(pages)
+            if not rows:
+                print(json.dumps({
+                    "files_written": 0,
+                    "mode": "single-file",
+                    "rows_exported": 0,
+                }, ensure_ascii=False, sort_keys=True))
+                return 0
             write_csv_atomic(args.output_csv, [row.cells for row in rows], args.overwrite)
     except ExportError as exc:
         print(f"error: {exc}", file=sys.stderr)
